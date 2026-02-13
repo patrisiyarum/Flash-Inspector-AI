@@ -91,7 +91,10 @@ def download_dataset(rf: Roboflow, name: str, config: dict, output_dir: Path) ->
         version = project.version(config["version"])
 
         dataset_path = output_dir / name
-        dataset_path.mkdir(parents=True, exist_ok=True)
+        # Remove existing directory to force fresh download (SDK skips if dir exists)
+        if dataset_path.exists():
+            import shutil
+            shutil.rmtree(dataset_path)
 
         dataset = version.download("yolov8", location=str(dataset_path))
 
