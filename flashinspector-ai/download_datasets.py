@@ -41,7 +41,7 @@ DATASETS = {
     "fire_smoke": {
         "workspace": "middle-east-tech-university",
         "project": "fire-and-smoke-detection-hiwia",
-        "version": 1,
+        "version": 2,
         "description": "Fire and smoke detection",
     },
     "emergency_exit": {
