@@ -39,8 +39,8 @@ DATASETS = {
         "description": "Fire extinguisher detection",
     },
     "fire_smoke": {
-        "workspace": "galib-xrtkn",
-        "project": "fire-smoke-dataset-for-yolov8",
+        "workspace": "middle-east-tech-university",
+        "project": "fire-and-smoke-detection-hiwia",
         "version": 1,
         "description": "Fire and smoke detection",
     },
@@ -95,13 +95,13 @@ def download_dataset(rf: Roboflow, name: str, config: dict, output_dir: Path) ->
 
         dataset = version.download("yolov8", location=str(dataset_path))
 
-        # Gather dataset stats
+        # Gather dataset stats - Roboflow may download into a subdirectory
         stats = {"name": name, "description": config["description"], "path": str(dataset_path)}
         for split in ["train", "valid", "test"]:
-            split_dir = dataset_path / split / "images"
-            if split_dir.exists():
-                count = len(list(split_dir.iterdir()))
-                stats[f"{split}_images"] = count
+            count = 0
+            for images_dir in dataset_path.rglob(f"{split}/images"):
+                count += len(list(images_dir.iterdir()))
+            stats[f"{split}_images"] = count
 
         logger.info(
             f"  Downloaded {name}: "
@@ -126,7 +126,8 @@ def build_combined_config(all_stats: list[dict], output_dir: Path):
     seen_classes = set()
     for stats in all_stats:
         name = stats["name"]
-        dataset_yaml = output_dir / name / "data.yaml"
+        yaml_candidates = list((output_dir / name).rglob("data.yaml"))
+        dataset_yaml = yaml_candidates[0] if yaml_candidates else output_dir / name / "data.yaml"
         if dataset_yaml.exists():
             with open(dataset_yaml) as f:
                 data = yaml.safe_load(f)
