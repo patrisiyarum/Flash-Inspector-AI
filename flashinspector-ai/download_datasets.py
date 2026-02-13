@@ -39,9 +39,9 @@ DATASETS = {
         "description": "Fire extinguisher detection",
     },
     "fire_smoke": {
-        "workspace": "mytyolov8",
-        "project": "mytest-hrswq",
-        "version": 24,
+        "workspace": "galib-xrtkn",
+        "project": "fire-smoke-dataset-for-yolov8",
+        "version": 1,
         "description": "Fire and smoke detection",
     },
     "emergency_exit": {
