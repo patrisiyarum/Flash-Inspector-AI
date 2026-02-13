@@ -1,0 +1,36 @@
+# Environment variables
+.env
+
+# Datasets (large files)
+fire_safety_datasets/*/
+
+# Trained models
+fire_safety_models/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+runs/
