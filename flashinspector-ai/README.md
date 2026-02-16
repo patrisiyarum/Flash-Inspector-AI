@@ -100,6 +100,16 @@ python fire_safety_datasets/train_model.py --export-only --weights fire_safety_m
 | `medium` | ~25.9M | Moderate | High | Server-side inference |
 | `large` | ~43.7M | Slower | Highest | Maximum accuracy |
 
+### Train on Google Colab (no strong local GPU)
+
+Use Colab’s free GPU by opening the notebook and running the cells in order:
+
+1. **Open in Colab:** [Open `train_on_colab.ipynb` in Colab](https://colab.research.google.com/github/YOUR_USERNAME/fire/blob/main/flashinspector-ai/train_on_colab.ipynb) (replace `YOUR_USERNAME` with your GitHub username after pushing), or upload `flashinspector-ai/train_on_colab.ipynb` to Colab (File → Upload notebook).
+2. **Runtime → Change runtime type → T4 GPU** (or better).
+3. Run the cells: get code (clone or use uploaded folder), install deps, set Roboflow API key, download dataset, train, then save `best.pt` to Google Drive so you keep it after the session ends.
+
+The notebook uses Colab-friendly defaults (e.g. `--batch 8`, `--epochs 50`) so training fits in a free session.
+
 ### Export Formats
 
 After training, models are automatically exported to:
@@ -145,6 +155,7 @@ flashinspector-ai/
 ├── .gitignore                 # Ignore .env, datasets, models
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # This file
+├── train_on_colab.ipynb       # Train on Google Colab (GPU)
 ├── download_datasets.py       # Dataset downloader
 ├── fire_safety_datasets/      # Datasets & scripts
 │   ├── combined_config.yaml   # All dataset classes
