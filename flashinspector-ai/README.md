@@ -110,6 +110,10 @@ Use Colab’s free GPU by opening the notebook and running the cells in order:
 
 The notebook uses Colab-friendly defaults (e.g. `--batch 8`, `--epochs 50`) so training fits in a free session.
 
+### Train on Kaggle (GPU)
+
+Use **`train_on_kaggle.ipynb`** in this repo: open [Kaggle Notebooks](https://www.kaggle.com/code), create a new notebook, then **File → Import Notebook from URL** and use your repo URL (e.g. `https://github.com/patrisiyarum/fire/blob/main/flashinspector-ai/train_on_kaggle.ipynb`), or clone the repo and upload the notebook. Enable **Settings → Accelerator → GPU**, add your Roboflow API key as a **Secret** (`ROBOFLOW_API_KEY`), and run all cells. The trained `best.pt` is copied to `/kaggle/working/` so you can download it from the Output tab.
+
 ### Export Formats
 
 After training, models are automatically exported to:
@@ -156,6 +160,7 @@ flashinspector-ai/
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # This file
 ├── train_on_colab.ipynb       # Train on Google Colab (GPU)
+├── train_on_kaggle.ipynb      # Train on Kaggle (GPU)
 ├── download_datasets.py       # Dataset downloader
 ├── fire_safety_datasets/      # Datasets & scripts
 │   ├── combined_config.yaml   # All dataset classes
