@@ -55,13 +55,8 @@ If no key is found, the download script will prompt you to enter it.
 | Dataset | Description | Source |
 |---------|-------------|--------|
 | `fire_extinguisher` | Fire extinguisher detection | Roboflow |
-| `fire_smoke` | Fire and smoke detection | Roboflow |
 | `emergency_exit` | Emergency exit sign detection | Roboflow |
-| `construction_safety` | Construction site safety (PPE, cones, etc.) | Roboflow |
-| `fire_smoke_extra` | Additional fire and smoke (9k+ images) | Roboflow |
 | `firenet` | Fire equipment: extinguisher, strobes, sounders, white domes (smoke detectors) | Roboflow |
-| `smoke100` | Smoke detection | Roboflow |
-| `wildfire_smoke` | Wildfire smoke detection (737 images) | Roboflow |
 
 **External (Zenodo):** FireSafetyNet (smoke detectors, extinguishers, etc.) — run `python download_external_datasets.py`
 
@@ -89,7 +84,7 @@ python download_datasets.py --list
 python fire_safety_datasets/train_model.py
 
 # Choose dataset and model size
-python fire_safety_datasets/train_model.py --dataset fire_smoke --size medium
+python fire_safety_datasets/train_model.py --dataset firenet --size medium
 
 # Custom epochs and batch size
 python fire_safety_datasets/train_model.py --epochs 50 --batch 32
@@ -156,7 +151,7 @@ python fire_safety_datasets/test_model.py ./test_images/ --batch
 python fire_safety_datasets/test_model.py video.mp4 --save-json
 
 # Use a specific model
-python fire_safety_datasets/test_model.py photo.jpg --model fire_safety_models/fire_smoke_medium/weights/best.pt
+python fire_safety_datasets/test_model.py photo.jpg --model fire_safety_models/firenet_medium/weights/best.pt
 ```
 
 Results are saved to `inference_results/`.

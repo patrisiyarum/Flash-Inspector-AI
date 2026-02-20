@@ -38,47 +38,17 @@ DATASETS = {
         "version": 2,
         "description": "Fire extinguisher detection",
     },
-    "fire_smoke": {
-        "workspace": "middle-east-tech-university",
-        "project": "fire-and-smoke-detection-hiwia",
-        "version": 2,
-        "description": "Fire and smoke detection",
-    },
     "emergency_exit": {
         "workspace": "emergency-exit-signs",
         "project": "emergency-exit-signs",
         "version": 1,
         "description": "Emergency exit sign detection",
     },
-    "construction_safety": {
-        "workspace": "roboflow-universe-projects",
-        "project": "construction-site-safety",
-        "version": 27,
-        "description": "Construction site safety detection",
-    },
-    "fire_smoke_extra": {
-        "workspace": "fire-and-smoke-detection-yolo",
-        "project": "fire-and-smoke-detection-o4uhv",
-        "version": 1,
-        "description": "Additional fire and smoke detection (9k+ images)",
-    },
     "firenet": {
         "workspace": "3d-imaging-ucl",
         "project": "firenet-tahn8",
         "version": 1,
         "description": "Fire safety equipment: extinguisher, strobes, sounders, white domes (smoke detectors), etc.",
-    },
-    "smoke100": {
-        "workspace": "smoke-detection",
-        "project": "smoke100-uwe4t",
-        "version": 5,
-        "description": "Smoke detection (100+ images)",
-    },
-    "wildfire_smoke": {
-        "workspace": "brad-dwyer",
-        "project": "wildfire-smoke",
-        "version": 1,
-        "description": "Wildfire smoke detection (737 images)",
     },
 }
 
