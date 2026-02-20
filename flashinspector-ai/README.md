@@ -58,15 +58,25 @@ If no key is found, the download script will prompt you to enter it.
 | `fire_smoke` | Fire and smoke detection | Roboflow |
 | `emergency_exit` | Emergency exit sign detection | Roboflow |
 | `construction_safety` | Construction site safety (PPE, cones, etc.) | Roboflow |
+| `fire_smoke_extra` | Additional fire and smoke (9k+ images) | Roboflow |
+| `firenet` | Fire equipment: extinguisher, strobes, sounders, white domes (smoke detectors) | Roboflow |
+| `smoke100` | Smoke detection | Roboflow |
+| `wildfire_smoke` | Wildfire smoke detection (737 images) | Roboflow |
+
+**External (Zenodo):** FireSafetyNet (smoke detectors, extinguishers, etc.) — run `python download_external_datasets.py`
 
 ### Download Commands
 
 ```bash
-# Download all datasets
+# Download all Roboflow datasets
 python download_datasets.py
+
+# Download external datasets (FireSafetyNet from Zenodo)
+python download_external_datasets.py
 
 # Download a specific dataset
 python download_datasets.py --dataset fire_extinguisher
+python download_datasets.py --dataset firenet
 
 # List available datasets
 python download_datasets.py --list
