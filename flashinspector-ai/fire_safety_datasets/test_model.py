@@ -6,7 +6,7 @@ Run trained YOLOv8 models on images or videos for fire safety detection.
 Usage:
     python fire_safety_datasets/test_model.py path/to/image.jpg
     python fire_safety_datasets/test_model.py path/to/video.mp4
-    python fire_safety_datasets/test_model.py path/to/video.mp4 --model fire_safety_models/fire_extinguisher_nano/weights/best.pt
+    python fire_safety_datasets/test_model.py path/to/video.mp4 --model fire_safety_models/firenet_nano/weights/best.pt
     python fire_safety_datasets/test_model.py path/to/folder/ --batch
 """
 
