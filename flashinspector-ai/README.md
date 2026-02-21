@@ -54,23 +54,47 @@ If no key is found, the download script will prompt you to enter it.
 
 | Dataset | Description | Source |
 |---------|-------------|--------|
-| `fire_extinguisher` | Fire extinguisher detection | Roboflow |
 | `emergency_exit` | Emergency exit sign detection | Roboflow |
 | `firenet` | Fire equipment: extinguisher, strobes, sounders, white domes (smoke detectors) | Roboflow |
 
-**External (Zenodo):** FireSafetyNet (smoke detectors, extinguishers, etc.) — run `python download_external_datasets.py`
+**External (Zenodo):** [FireSafetyNet](https://zenodo.org/records/13358169) — multiple sub-datasets:
+
+| Service | Description | Type |
+|---------|-------------|------|
+| 1 | FSE Detection – fire blankets, extinguishers, manual call points, smoke detectors | Detection |
+| 2 | FSE Marking Detection – marking signs | Detection |
+| 3 | Condition Check – Modal (blocked/non-compliant extinguishers) | Segmentation |
+| 4 | Condition Check – Amodal (partially obscured) | Segmentation |
+| 5 | Details Extraction – Inspection Tags | Detection |
+| 6 | Details Extraction – Fire Classes Symbols | Detection |
+
+Detection (1, 2, 5, 6) → `merged_dataset/`. Segmentation (3, 4) → `merged_segmentation_dataset/`. Use `--task segment` to train the segmentation model.
+
+Run `python download_external_datasets.py` after `download_datasets.py`.
 
 ### Download Commands
 
 ```bash
-# Download all Roboflow datasets
+# Download Roboflow datasets
 python download_datasets.py
 
-# Download external datasets (FireSafetyNet from Zenodo)
+# Download FireSafetyNet from Zenodo (Service 1 only, ~379 MB)
 python download_external_datasets.py
 
+# Download specific services (e.g. detection services 1, 2, 5, 6)
+python download_external_datasets.py --services 1,2,5,6
+
+# Download all FireSafetyNet services (~7.5 GB)
+python download_external_datasets.py --all
+
+# Merge detection and segmentation datasets
+python prepare_dataset.py
+
+# Train segmentation model (services 3, 4)
+python train.py --task segment
+
 # Download a specific dataset
-python download_datasets.py --dataset fire_extinguisher
+python download_datasets.py --dataset firenet
 python download_datasets.py --dataset firenet
 
 # List available datasets
@@ -80,7 +104,7 @@ python download_datasets.py --list
 ## Training
 
 ```bash
-# Train with defaults (fire_extinguisher dataset, nano model)
+# Train with defaults (firenet dataset, nano model)
 python fire_safety_datasets/train_model.py
 
 # Choose dataset and model size
@@ -93,7 +117,7 @@ python fire_safety_datasets/train_model.py --epochs 50 --batch 32
 python fire_safety_datasets/train_model.py --no-export
 
 # Export an existing model only
-python fire_safety_datasets/train_model.py --export-only --weights fire_safety_models/fire_extinguisher_nano/weights/best.pt
+python fire_safety_datasets/train_model.py --export-only --weights fire_safety_models/firenet_nano/weights/best.pt
 ```
 
 ### Model Sizes

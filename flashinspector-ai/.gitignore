@@ -3,6 +3,8 @@
 
 # Datasets (large files)
 fire_safety_datasets/*/
+merged_dataset/
+merged_segmentation_dataset/
 
 # Trained models
 fire_safety_models/

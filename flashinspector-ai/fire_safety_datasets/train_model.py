@@ -6,8 +6,8 @@ Trains fire safety detection models using Ultralytics YOLOv8.
 Usage:
     python fire_safety_datasets/train_model.py
     python fire_safety_datasets/train_model.py --dataset firenet --size medium
-    python fire_safety_datasets/train_model.py --dataset fire_extinguisher --size nano --epochs 50
-    python fire_safety_datasets/train_model.py --export-only --weights fire_safety_models/fire_extinguisher_nano/weights/best.pt
+    python fire_safety_datasets/train_model.py --dataset firenet --size nano --epochs 50
+    python fire_safety_datasets/train_model.py --export-only --weights fire_safety_models/firenet_nano/weights/best.pt
 """
 
 import argparse
@@ -58,7 +58,6 @@ DEFAULT_CONFIG = {
 
 # Available datasets (must match download_datasets.py names)
 AVAILABLE_DATASETS = [
-    "fire_extinguisher",
     "emergency_exit",
     "firenet",
 ]
@@ -179,8 +178,8 @@ def main():
     parser.add_argument(
         "--dataset",
         choices=AVAILABLE_DATASETS,
-        default="fire_extinguisher",
-        help="Dataset to train on (default: fire_extinguisher)",
+        default="firenet",
+        help="Dataset to train on (default: firenet)",
     )
     parser.add_argument(
         "--size",

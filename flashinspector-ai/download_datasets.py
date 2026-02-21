@@ -5,7 +5,7 @@ Downloads fire safety datasets from Roboflow for YOLO training.
 
 Usage:
     python download_datasets.py
-    python download_datasets.py --dataset fire_extinguisher
+    python download_datasets.py --dataset firenet
     python download_datasets.py --list
 """
 
@@ -32,12 +32,6 @@ logger = logging.getLogger(__name__)
 
 # Dataset configurations
 DATASETS = {
-    "fire_extinguisher": {
-        "workspace": "fire-extinguisher",
-        "project": "fireextinguisher-z5atr",
-        "version": 2,
-        "description": "Fire extinguisher detection",
-    },
     "emergency_exit": {
         "workspace": "emergency-exit-signs",
         "project": "emergency-exit-signs",
