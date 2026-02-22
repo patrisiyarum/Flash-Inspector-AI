@@ -214,3 +214,7 @@ def main():
         download_service(sid)
     add_to_combined_config(ids)
     print("\nRun prepare_dataset.py to merge detection and segmentation datasets.")
+
+
+if __name__ == "__main__":
+    main()
