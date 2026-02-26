@@ -69,14 +69,134 @@ datasets:
       project: extinguisher-missing
       version: 1
 
+  non_compliant_tag:
+    description: >
+      Detects non-compliance tags attached to fire extinguishers. These are
+      red/yellow/orange tags or stickers placed by inspectors to indicate
+      the extinguisher has failed inspection and is non-compliant.
+      Very common violation in the inspection videos.
+    classes:
+      - non_compliant_tag
+    annotation_guide: >
+      Annotate the colored tag (typically red, yellow, or orange) attached to
+      or hanging from a fire extinguisher that indicates non-compliance.
+      Draw the bbox around the tag itself, not the entire extinguisher.
+    source:
+      workspace: custom
+      project: non-compliant-tag
+      version: 1
+
+  exit_sign_condition:
+    description: >
+      Detects exit signs that are not illuminated (dark/unlit). Normal lit
+      exit signs are already detected by the emergency_exit dataset.
+      This specifically identifies non-functioning exit signs.
+    classes:
+      - exit_sign_dark
+    annotation_guide: >
+      Annotate exit signs that are clearly not illuminated — the sign face
+      is dark, partially lit, or visibly broken. Do NOT annotate properly
+      functioning lit exit signs (those use the emergency_exit class).
+    source:
+      workspace: custom
+      project: exit-sign-condition
+      version: 1
+
+  notification_appliance:
+    description: >
+      Detects fire alarm notification appliances (horn/strobes, speakers,
+      bells) mounted on walls. Used to check mounting height compliance
+      (ADA requires 80" max, NFPA requires 90" min for ceiling-mount).
+    classes:
+      - notification_appliance
+    annotation_guide: >
+      Annotate any fire alarm horn/strobe, speaker, or bell visible on
+      walls or ceilings. Include the full device in the bounding box.
+    source:
+      workspace: custom
+      project: notification-appliance
+      version: 1
+
+  pull_station:
+    description: >
+      Detects manual fire alarm pull stations mounted on walls.
+      Used to verify presence and mounting height compliance
+      (ADA: 48" max, typically 42"-48" above floor).
+    classes:
+      - pull_station
+    annotation_guide: >
+      Annotate any manual fire alarm pull station (red box with pull handle).
+      Include the full device in the bounding box.
+    source:
+      workspace: custom
+      project: pull-station
+      version: 1
+
+  smoke_detector_condition:
+    description: >
+      Detects smoke detector bases where the detector unit is missing.
+      The base/mounting plate is on the ceiling but the actual detector
+      is absent.
+    classes:
+      - smoke_detector_missing
+    annotation_guide: >
+      Annotate the circular ceiling-mount base where a smoke detector
+      should be but the detector unit itself is absent. Also annotate
+      intact smoke detectors as smoke_detector for comparison.
+    source:
+      workspace: custom
+      project: smoke-detector-condition
+      version: 1
+
+  fire_alarm_panel:
+    description: >
+      Detects fire alarm control panels (FACPs). Used to read panel
+      status lights (normal, trouble, supervisory, alarm) via the
+      color of indicator LEDs.
+    classes:
+      - fire_alarm_panel
+    annotation_guide: >
+      Annotate the fire alarm control panel (FACP) — the metal box
+      on the wall with status LEDs and controls. Include the full
+      panel face in the bounding box.
+    source:
+      workspace: custom
+      project: fire-alarm-panel
+      version: 1
+
+  blocked_exit:
+    description: >
+      Detects emergency exits that are blocked or obstructed by
+      furniture, equipment, storage, or other objects.
+    classes:
+      - blocked_exit
+    annotation_guide: >
+      Annotate the area around an emergency exit door that is visibly
+      blocked or obstructed. The bbox should cover the exit door and
+      the obstructing objects.
+    source:
+      workspace: custom
+      project: blocked-exit
+      version: 1
+
 # Merged list of all unique classes across datasets
 all_classes:
+  # Equipment detection
   - fire extinguisher
   - fire
   - smoke
   - emergency exit sign
+  - notification_appliance
+  - pull_station
+  - fire_alarm_panel
+  # Violation / condition classes
   - empty_mount
   - extinguisher_cabinet_empty
+  - non_compliant_tag
+  - exit_sign_dark
+  - smoke_detector_missing
+  - blocked_exit
+  # Construction safety
   - Hardhat
   - Mask
   - NO-Hardhat
