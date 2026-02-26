@@ -1,0 +1,271 @@
+# FlashInspector AI — Video Transcriptions & Violation Log
+# Ground truth violations identified from fire safety inspection videos.
+# Use this as reference for training and validating the model.
+#
+# Violation types:
+#   - extinguisher_out_of_date: Expired inspection tag (detected by S5 OCR)
+#   - extinguisher_non_compliant: Red/yellow non-compliance tag (needs: non_compliant_tag class)
+#   - extinguisher_missing: Empty mount/cabinet (needs: empty_mount class)
+#   - notification_too_high: Horn/strobe mounted too high (needs: notification_appliance class)
+#   - exit_not_illuminated: Exit sign dark/unlit (needs: exit_sign_dark class)
+#   - smoke_detector_missing: Detector unit missing from base (needs: smoke_detector_missing class)
+#   - exit_blocked: Emergency exit obstructed (needs: blocked_exit class)
+#   - pull_station_too_high: Pull station mounted too high (needs: pull_station class)
+#   - fire_panel_trouble: FACP showing trouble/supervisory (needs: fire_alarm_panel class)
+
+videos:
+  # ──────────────────────────────────────────────────────────────────
+  # Video 1: Facility Inspection
+  # ──────────────────────────────────────────────────────────────────
+  sfxX7yRpNudx3FknTYH6_1.mp4:
+    location: "Facility (office building)"
+    violations:
+      - timestamp: "00:05-00:07"
+        type: extinguisher_out_of_date
+        description: "Fire extinguisher out of date"
+        scene: "Fire extinguisher in wall mount near office doorway"
+        model_can_detect: true
+        detection_method: "S5 OCR reads expiry date from tag/label"
+
+      - timestamp: "00:26-00:29"
+        type: notification_too_high
+        description: "Notification appliance is too high"
+        scene: "Horn/strobe notification appliance on wall in hallway"
+        model_can_detect: false
+        class_needed: notification_appliance
+        detection_method: "Detect appliance, check if bbox center is in top 25% of frame"
+
+      - timestamp: "00:52-00:54"
+        type: exit_not_illuminated
+        description: "Exit sign not illuminated"
+        scene: "Dark exit sign in stairwell/hallway"
+        model_can_detect: false
+        class_needed: exit_sign_dark
+        detection_method: "Detect dark exit sign directly (separate from lit exit signs)"
+
+      - timestamp: "01:05-01:07"
+        type: smoke_detector_missing
+        description: "Smoke detector missing from base"
+        scene: "Ceiling-mounted smoke detector base without the detector unit"
+        model_can_detect: false
+        class_needed: smoke_detector_missing
+        detection_method: "Detect empty detector base on ceiling"
+
+      - timestamp: "01:14-01:18"
+        type: address_missing
+        description: "Address missing from front of suite"
+        scene: "Glass office door without address/suite number"
+        model_can_detect: false
+        class_needed: null
+        note: "Not a fire equipment detection task — requires reading/verifying signage"
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 2: Apartment Complex Building 2709-2717
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_3.mp4:
+    location: "Apartment Complex, Building 2709-2717"
+    violations:
+      - timestamp: "00:00-00:04"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside apartment 2711 tagged as non-compliant"
+        scene: "Fire extinguisher in red wall-mounted case with non-compliance tag"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "00:53-01:01"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside apartment 2717 tagged as non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "02:11-02:19"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside apartment 2703 tagged non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 3: Apartment Complex Building 2901-2908 (clip 1)
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_1.mp4:
+    location: "Apartment Complex, Building 2901-2908"
+    violations:
+      - timestamp: "01:22-01:28"
+        type: extinguisher_missing
+        description: "Extinguisher missing outside apartment 2901"
+        scene: "Empty fire extinguisher case/mount in hallway"
+        model_can_detect: false
+        class_needed: empty_mount
+        detection_method: "Detect empty_mount, check no nearby fire_extinguisher"
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 4: Apartment Complex Building 2901-2908 (clip 2)
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_2.mp4:
+    location: "Apartment Complex, Building 2901-2908"
+    violations:
+      - timestamp: "00:42-00:47"
+        type: extinguisher_missing
+        description: "Missing fire extinguisher outside of apartment 2907"
+        scene: "Empty fire extinguisher case at top of stairs"
+        model_can_detect: false
+        class_needed: empty_mount
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 5: Apartment Complex Building 1301-1308
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_5.mp4:
+    location: "Apartment Complex, Building 1301-1308"
+    violations:
+      - timestamp: "00:00-00:05"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of 1301 tagged as non-compliant"
+        scene: "Fire extinguisher in red wall-mounted case with tag"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "00:35-00:41"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of apartment 1308 tagged non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 6: Apartment Complex Building 1509-1517 (phone call)
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_6.mp4:
+    location: "Apartment Complex, Building 1509-1517"
+    violations: []
+    note: >
+      Inspector is on phone call discussing training schedules, shift coverage,
+      and equipment at stations 56 and 51. No violations documented on camera
+      during this clip (phone call from 01:25-02:59).
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 7: Apartment Complex Building 1509-1517 (violations)
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_7.mp4:
+    location: "Apartment Complex, Building 1509-1517"
+    violations:
+      - timestamp: "01:20-01:26"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of 1512 tagged as non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "02:01-02:06"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of 1516 tagged as non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 8: Apartment Complex Building 1301-1308 (tablet documentation)
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_8.mp4:
+    location: "Apartment Complex, Building 1301-1308"
+    violations:
+      - timestamp: "00:14-00:23"
+        type: extinguisher_non_compliant
+        description: "Extinguisher outside of 1314 — inspector documenting on tablet"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "01:43-01:52"
+        type: extinguisher_non_compliant
+        description: "Extinguisher outside of 1316 — inspector documenting on tablet"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 9: Apartment Complex Building 1709-1717
+  # ──────────────────────────────────────────────────────────────────
+  Sna54U5CjZHZECx9dyDf_9.mp4:
+    location: "Apartment Complex, Building 1709-1717"
+    violations:
+      - timestamp: "00:33-00:40"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of 1707 tagged non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+      - timestamp: "02:00-02:07"
+        type: extinguisher_non_compliant
+        description: "Fire extinguisher outside of 1716 tagged non-compliant"
+        model_can_detect: false
+        class_needed: non_compliant_tag
+
+  # ──────────────────────────────────────────────────────────────────
+  # Video 10: Conference Center
+  # ──────────────────────────────────────────────────────────────────
+  U7i5r4t4mDFyzedkzw8I_1_end.mp4:
+    location: "Conference Center"
+    violations:
+      - timestamp: "00:31-00:34"
+        type: exit_blocked
+        description: "Exit blocked"
+        model_can_detect: false
+        class_needed: blocked_exit
+        detection_method: "Detect blocked_exit class directly"
+
+      - timestamp: "00:50-00:52"
+        type: pull_station_too_high
+        description: "Pull station mounted too high"
+        model_can_detect: false
+        class_needed: pull_station
+        detection_method: "Detect pull_station, check if bbox center in top 25% of frame"
+
+      - timestamp: "01:46-01:53"
+        type: fire_panel_trouble
+        description: "Fire alarm panel has system supervisory and system trouble"
+        model_can_detect: false
+        class_needed: fire_alarm_panel
+        detection_method: "Detect FACP, analyze LED indicator colors for trouble state"
+
+      - timestamp: "02:39-02:44"
+        type: observation
+        description: "Conference room A is very large and empty"
+        note: "General observation, not a violation"
+
+# ──────────────────────────────────────────────────────────────────
+# Summary Statistics
+# ──────────────────────────────────────────────────────────────────
+summary:
+  total_videos: 10
+  total_violations: 22
+  by_type:
+    extinguisher_non_compliant: 12
+    extinguisher_missing: 2
+    extinguisher_out_of_date: 1
+    exit_not_illuminated: 1
+    notification_too_high: 1
+    smoke_detector_missing: 1
+    exit_blocked: 1
+    pull_station_too_high: 1
+    fire_panel_trouble: 1
+    address_missing: 1   # not detectable by vision model
+  priority_for_training:
+    - class: non_compliant_tag
+      reason: "Most common violation (12 instances) — red/yellow tags on extinguishers"
+      training_data: "Annotate the colored tags in feedback loop frames"
+    - class: empty_mount
+      reason: "2 instances of missing extinguishers — empty red cases"
+      training_data: "Annotate empty wall-mount cases without extinguishers"
+    - class: exit_sign_dark
+      reason: "1 instance of unlit exit sign"
+      training_data: "Annotate exit signs that are dark/off"
+    - class: blocked_exit
+      reason: "1 instance of blocked exit"
+      training_data: "Annotate exit doors with objects blocking them"
+    - class: smoke_detector_missing
+      reason: "1 instance of detector missing from ceiling base"
+      training_data: "Annotate empty smoke detector bases on ceilings"
+    - class: notification_appliance
+      reason: "1 instance of appliance mounted too high"
+      training_data: "Annotate horn/strobes on walls"
+    - class: pull_station
+      reason: "1 instance of pull station too high"
+      training_data: "Annotate red manual pull stations"
+    - class: fire_alarm_panel
+      reason: "1 instance of panel showing trouble"
+      training_data: "Annotate fire alarm control panels"
