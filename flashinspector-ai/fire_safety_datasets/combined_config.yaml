@@ -51,12 +51,32 @@ datasets:
       project: construction-site-safety
       version: 27
 
+  extinguisher_missing:
+    description: >
+      Detects empty fire extinguisher mounting brackets, wall hooks, cabinets,
+      and designated extinguisher locations where the extinguisher is absent.
+      Used to flag "EXTINGUISHER MISSING" violations during inspections.
+    classes:
+      - empty_mount
+      - extinguisher_cabinet_empty
+    annotation_guide: >
+      Annotate any wall bracket, hook, floor stand, or glass cabinet that is
+      clearly meant to hold a fire extinguisher but is currently empty.
+      Include the full bracket/mount area in the bounding box.
+      Do NOT annotate brackets that have an extinguisher on them.
+    source:
+      workspace: custom
+      project: extinguisher-missing
+      version: 1
+
 # Merged list of all unique classes across datasets
 all_classes:
   - fire extinguisher
   - fire
   - smoke
   - emergency exit sign
+  - empty_mount
+  - extinguisher_cabinet_empty
   - Hardhat
   - Mask
   - NO-Hardhat
