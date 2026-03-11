@@ -44,6 +44,12 @@ DATASETS = {
         "version": 1,
         "description": "Fire safety equipment: extinguisher, strobes, sounders, white domes (smoke detectors), etc.",
     },
+    "fire_extinguisher_tags": {
+        "workspace": "fire-hgcbk",
+        "project": "find-yellow-tags-fire-extinguishers-white-tags-and-red-tags-2",
+        "version": 1,
+        "description": "Fire extinguishers with yellow, red, and white inspection tags.",
+    },
 }
 
 BASE_DIR = Path(__file__).parent

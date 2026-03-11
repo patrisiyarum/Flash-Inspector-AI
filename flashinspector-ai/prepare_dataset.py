@@ -49,6 +49,12 @@ CLASS_ALIASES = {
     "Flashing_Light_Orbs": "flashing_light_orb",
     "flashing_light_orb": "flashing_light_orb",
     "Sounders": "sounder",
+    "yellow tag": "yellow_tag",
+    "yellow_tag": "yellow_tag",
+    "red tag": "red_tag",
+    "red_tag": "red_tag",
+    "white tag": "white_tag",
+    "white_tag": "white_tag",
 }
 
 

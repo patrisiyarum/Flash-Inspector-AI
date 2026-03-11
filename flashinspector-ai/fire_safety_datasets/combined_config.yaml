@@ -179,6 +179,21 @@ datasets:
       project: blocked-exit
       version: 1
 
+  fire_extinguisher_tags:
+    description: >
+      Fire extinguishers with colored inspection tags (yellow, red, white).
+      Yellow and red tags indicate non-compliance or failed inspection.
+      White tags indicate current/valid inspection.
+    classes:
+      - fire_extinguisher
+      - yellow_tag
+      - red_tag
+      - white_tag
+    source:
+      workspace: fire-hgcbk
+      project: find-yellow-tags-fire-extinguishers-white-tags-and-red-tags-2
+      version: 1
+
 # Merged list of all unique classes across datasets
 all_classes:
   # Equipment detection
@@ -193,6 +208,9 @@ all_classes:
   - empty_mount
   - extinguisher_cabinet_empty
   - non_compliant_tag
+  - yellow_tag
+  - red_tag
+  - white_tag
   - exit_sign_dark
   - smoke_detector_missing
   - blocked_exit
