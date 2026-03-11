@@ -3,6 +3,7 @@
 
 # Datasets (large files)
 fire_safety_datasets/*/
+!fire_safety_datasets/13358169/
 merged_dataset/
 merged_segmentation_dataset/
 
