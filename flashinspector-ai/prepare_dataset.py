@@ -123,12 +123,41 @@ def remap_labels(label_file: Path, class_map: dict[int, int]) -> list[str]:
     return lines
 
 
+MAX_IMAGES_PER_DATASET = 1500
+
+OVERSAMPLE_DATASETS = {
+    "find_empty_mounts": 3,
+    "extinguisher_missing": 3,
+}
+
+
+def _collect_split_files(dataset_path: Path, split: str):
+    """Collect (img_file, lbl_dir) pairs for a given split."""
+    try_splits = [split] if split != "valid" else ["valid", "val"]
+    for s in try_splits:
+        img_dirs = list(dataset_path.rglob(f"{s}/images"))
+        lbl_dirs = list(dataset_path.rglob(f"{s}/labels"))
+        if img_dirs:
+            img_dir = img_dirs[0]
+            lbl_dir = lbl_dirs[0] if lbl_dirs else None
+            files = [
+                f for f in sorted(img_dir.iterdir())
+                if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+            ]
+            return files, lbl_dir
+    return [], None
+
+
 def _merge_task_datasets(
     datasets: dict[str, dict],
     output_dir: Path,
     use_aliases: bool = True,
 ) -> None:
-    """Merge datasets into output_dir. use_aliases=False for segmentation (no class alignment)."""
+    """Merge datasets into output_dir with balancing.
+
+    Caps each dataset at MAX_IMAGES_PER_DATASET and oversamples
+    rare datasets listed in OVERSAMPLE_DATASETS.
+    """
     dataset_classes = {n: info["classes"] for n, info in datasets.items()}
     if use_aliases:
         unified_classes, class_mappings = build_class_mapping(dataset_classes)
@@ -159,36 +188,35 @@ def _merge_task_datasets(
             continue
         class_map = class_mappings[name]
         dataset_images = 0
+        oversample = OVERSAMPLE_DATASETS.get(name, 1)
 
         for split in ["train", "valid", "test"]:
-            try_splits = [split] if split != "valid" else ["valid", "val"]
-            img_dirs, lbl_dirs = [], []
-            for s in try_splits:
-                img_dirs = list(dataset_path.rglob(f"{s}/images"))
-                lbl_dirs = list(dataset_path.rglob(f"{s}/labels"))
-                if img_dirs:
-                    break
-            if not img_dirs:
+            files, lbl_dir = _collect_split_files(dataset_path, split)
+            if not files:
                 continue
-            img_dir = img_dirs[0]
-            lbl_dir = lbl_dirs[0] if lbl_dirs else None
 
-            for img_file in img_dir.iterdir():
-                if img_file.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
-                    continue
-                new_name = f"{name}_{img_file.name}"
-                shutil.copy2(img_file, output_dir / split / "images" / new_name)
-                if lbl_dir:
-                    label_name = img_file.stem + ".txt"
-                    label_file = lbl_dir / label_name
-                    if label_file.exists():
-                        remapped = remap_labels(label_file, class_map)
-                        (output_dir / split / "labels" / f"{name}_{label_name}").write_text(
-                            "\n".join(remapped) + "\n" if remapped else ""
-                        )
-                dataset_images += 1
+            cap = MAX_IMAGES_PER_DATASET if split == "train" else len(files)
+            files_to_use = files[:cap]
 
-        logger.info(f"  {name}: {dataset_images} images")
+            for copy_idx in range(oversample if split == "train" else 1):
+                for img_file in files_to_use:
+                    suffix = f"_dup{copy_idx}" if copy_idx > 0 else ""
+                    new_name = f"{name}{suffix}_{img_file.name}"
+                    shutil.copy2(img_file, output_dir / split / "images" / new_name)
+                    if lbl_dir:
+                        label_name = img_file.stem + ".txt"
+                        label_file = lbl_dir / label_name
+                        if label_file.exists():
+                            remapped = remap_labels(label_file, class_map)
+                            (output_dir / split / "labels" / f"{name}{suffix}_{label_name}").write_text(
+                                "\n".join(remapped) + "\n" if remapped else ""
+                            )
+                    dataset_images += 1
+
+        extra = f" (oversampled {oversample}x)" if oversample > 1 else ""
+        if len(files) > MAX_IMAGES_PER_DATASET:
+            extra += f" (capped from {len(files)} to {MAX_IMAGES_PER_DATASET} train images)"
+        logger.info(f"  {name}: {dataset_images} images{extra}")
         total_images += dataset_images
 
     data_yaml = {

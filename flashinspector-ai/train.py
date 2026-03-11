@@ -34,11 +34,11 @@ def main():
 
     if args.task == "segment":
         data_dir = MERGED_SEG_DIR
-        model_name = args.model or "yolov8s-seg.pt"
+        model_name = args.model or "yolov8m-seg.pt"
         run_name = "fire_safety_seg"
     else:
         data_dir = MERGED_DIR
-        model_name = args.model or "yolov8s.pt"
+        model_name = args.model or "yolov8m.pt"
         run_name = "fire_safety"
 
     data_yaml = data_dir / "data.yaml"
@@ -59,18 +59,20 @@ def main():
         name=run_name,
         exist_ok=True,
         resume=args.resume,
-        # Augmentation
-        hsv_h=0.015,
-        hsv_s=0.7,
-        hsv_v=0.4,
-        degrees=10.0,
-        translate=0.1,
+        # Augmentation — strong color jitter to prevent color shortcuts
+        hsv_h=0.03,
+        hsv_s=0.9,
+        hsv_v=0.5,
+        degrees=15.0,
+        translate=0.15,
         scale=0.5,
         fliplr=0.5,
         mosaic=1.0,
-        mixup=0.1,
+        close_mosaic=15,
+        mixup=0.15,
+        copy_paste=0.15,
         # Training params
-        patience=20,
+        patience=30,
         save=True,
         save_period=10,
         val=True,
