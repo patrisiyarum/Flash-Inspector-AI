@@ -27,6 +27,8 @@ BASE_DIR = Path(__file__).parent
 DATASET_DIR = BASE_DIR / "fire_safety_datasets"
 MERGED_DIR = BASE_DIR / "merged_dataset"
 MERGED_SEG_DIR = BASE_DIR / "merged_segmentation_dataset"
+MERGED_EQUIP_DIR = BASE_DIR / "merged_equipment_dataset"
+MERGED_VIOL_DIR = BASE_DIR / "merged_violation_dataset"
 
 # Map variant class names to canonical unified names (case-insensitive match)
 CLASS_ALIASES = {
@@ -279,5 +281,119 @@ def merge_datasets():
         logger.info("\nNo segmentation datasets to merge.")
 
 
+# Classes used for the split-model pipeline
+EQUIPMENT_CANONICAL = {
+    "fire_extinguisher", "fire_blanket", "smoke_detector", "manual_call_point",
+    "emergency_exit", "fire_suppression_sign", "flashing_light_orb", "sounder",
+    "notification_appliance", "pull_station", "fire_alarm_panel", "emergency_light",
+    "alarm", "alarm_bell", "alarm_lever", "fire", "smoke",
+}
+
+VIOLATION_CANONICAL = {
+    "empty_mount", "extinguisher_cabinet_empty", "non_compliant_tag",
+    "yellow_tag", "red_tag", "white_tag", "exit_sign_dark",
+    "smoke_detector_missing", "blocked_exit",
+}
+
+
+def _filter_labels_by_classes(label_file: Path, allowed_ids: set[int]) -> list[str]:
+    """Keep only label lines whose class ID is in allowed_ids."""
+    lines = []
+    for line in label_file.read_text().strip().splitlines():
+        parts = line.strip().split()
+        if parts and int(parts[0]) in allowed_ids:
+            lines.append(line.strip())
+    return lines
+
+
+def build_split_datasets():
+    """Build separate equipment-only and violation-only datasets from merged_dataset.
+
+    Reads the already-merged data.yaml to get the unified class list,
+    then filters labels to produce two focused datasets.
+    """
+    merged_yaml = MERGED_DIR / "data.yaml"
+    if not merged_yaml.exists():
+        logger.info("merged_dataset not found, skipping split-model datasets.")
+        return
+
+    with open(merged_yaml) as f:
+        merged_cfg = yaml.safe_load(f)
+
+    all_names = merged_cfg.get("names", [])
+    if isinstance(all_names, dict):
+        all_names = [all_names[k] for k in sorted(all_names.keys())]
+
+    equip_ids = {i for i, n in enumerate(all_names) if n in EQUIPMENT_CANONICAL}
+    viol_ids = {i for i, n in enumerate(all_names) if n in VIOLATION_CANONICAL}
+
+    if not equip_ids and not viol_ids:
+        logger.info("No equipment or violation classes found in merged_dataset — skipping split.")
+        return
+
+    for target_dir, keep_ids, label in [
+        (MERGED_EQUIP_DIR, equip_ids, "equipment"),
+        (MERGED_VIOL_DIR, viol_ids, "violation"),
+    ]:
+        if not keep_ids:
+            continue
+
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+
+        # Remap kept IDs to contiguous 0..N
+        kept_names = [all_names[i] for i in sorted(keep_ids)]
+        old_to_new = {old_id: new_id for new_id, old_id in enumerate(sorted(keep_ids))}
+
+        img_count = 0
+        for split in ["train", "valid", "test"]:
+            src_img = MERGED_DIR / split / "images"
+            src_lbl = MERGED_DIR / split / "labels"
+            dst_img = target_dir / split / "images"
+            dst_lbl = target_dir / split / "labels"
+            dst_img.mkdir(parents=True, exist_ok=True)
+            dst_lbl.mkdir(parents=True, exist_ok=True)
+
+            if not src_img.exists():
+                continue
+
+            for img_file in sorted(src_img.iterdir()):
+                lbl_file = src_lbl / (img_file.stem + ".txt")
+                if not lbl_file.exists():
+                    continue
+
+                # Only include images that have at least one label in the target set
+                kept_lines = _filter_labels_by_classes(lbl_file, keep_ids)
+                if not kept_lines:
+                    continue
+
+                # Remap class IDs
+                remapped = []
+                for line in kept_lines:
+                    parts = line.split()
+                    parts[0] = str(old_to_new[int(parts[0])])
+                    remapped.append(" ".join(parts))
+
+                shutil.copy2(img_file, dst_img / img_file.name)
+                (dst_lbl / lbl_file.name).write_text("\n".join(remapped) + "\n")
+                img_count += 1
+
+        data_yaml = {
+            "path": str(target_dir.resolve()),
+            "train": "train/images",
+            "val": "valid/images",
+            "test": "test/images",
+            "nc": len(kept_names),
+            "names": kept_names,
+        }
+        with open(target_dir / "data.yaml", "w") as f:
+            yaml.dump(data_yaml, f, default_flow_style=False, sort_keys=False)
+
+        logger.info(f"\n  Split-model {label} dataset: {target_dir}")
+        logger.info(f"    Classes ({len(kept_names)}): {kept_names}")
+        logger.info(f"    Images: {img_count}")
+
+
 if __name__ == "__main__":
     merge_datasets()
+    build_split_datasets()

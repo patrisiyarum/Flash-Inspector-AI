@@ -6,6 +6,14 @@ fire_safety_datasets/*/
 !fire_safety_datasets/13358169/
 merged_dataset/
 merged_segmentation_dataset/
+merged_equipment_dataset/
+merged_violation_dataset/
+annotation_frames/
+inference_results/
+feedback_dataset/
+feedback_review/
+feedback_models/
+feedback_runs/
 
 # Trained models
 fire_safety_models/
