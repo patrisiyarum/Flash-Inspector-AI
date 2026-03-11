@@ -55,6 +55,14 @@ CLASS_ALIASES = {
     "red_tag": "red_tag",
     "white tag": "white_tag",
     "white_tag": "white_tag",
+    "Emergency-Light": "emergency_light",
+    "emergency-light": "emergency_light",
+    "emergency_light": "emergency_light",
+    "Alarm": "alarm",
+    "Alarm(Bell)": "alarm_bell",
+    "Alarm(Lever)": "alarm_lever",
+    "Alarm (Lever)": "alarm_lever",
+    "Fire-Extinguisher": "fire_extinguisher",
 }
 
 

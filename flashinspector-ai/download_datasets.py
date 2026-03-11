@@ -50,6 +50,36 @@ DATASETS = {
         "version": 1,
         "description": "Fire extinguishers with yellow, red, and white inspection tags.",
     },
+    "blocked_emergency_exit": {
+        "workspace": "sakthi-ypq7a",
+        "project": "blocked-emergency-exit-f6a2h",
+        "version": 1,
+        "description": "Blocked emergency exit detection — exits obstructed by objects.",
+    },
+    "emergency_lighting": {
+        "workspace": "machine-learning-pw2sw",
+        "project": "machine-learning-finals-ioh5g",
+        "version": 1,
+        "description": "Emergency lighting and fire safety equipment: alarms, emergency lights, fire extinguishers.",
+    },
+    "safely_object_detection": {
+        "workspace": "hari-narayanan-tb1dg",
+        "project": "safely-object-detection-kcujz",
+        "version": 1,
+        "description": "General fire safety object detection (extinguishers, exits, safety equipment).",
+    },
+    "fire_extinguisher_details": {
+        "workspace": "fire-extinguisher-detection",
+        "project": "fire-extinguisher-sz0p7",
+        "version": 1,
+        "description": "Detailed fire extinguisher detection — body, gauge, nozzle, and component-level annotations.",
+    },
+    "find_empty_mounts": {
+        "workspace": "fire-hgcbk",
+        "project": "find-empty-mounts",
+        "version": 1,
+        "description": "Empty fire extinguisher mount/bracket detection — missing extinguisher locations.",
+    },
 }
 
 BASE_DIR = Path(__file__).parent

@@ -194,6 +194,63 @@ datasets:
       project: find-yellow-tags-fire-extinguishers-white-tags-and-red-tags-2
       version: 1
 
+  blocked_emergency_exit:
+    description: >
+      Detects emergency exits that are blocked or obstructed.
+      Sourced from Roboflow — complements the custom blocked_exit dataset.
+    classes:
+      - blocked_exit
+    source:
+      workspace: sakthi-ypq7a
+      project: blocked-emergency-exit-f6a2h
+      version: 1
+
+  emergency_lighting:
+    description: >
+      Emergency lighting and fire safety equipment detection including
+      alarms (bell, lever), emergency lights, and fire extinguishers.
+    classes:
+      - Alarm
+      - Alarm(Bell)
+      - Alarm(Lever)
+      - Emergency-Light
+      - Fire-Extinguisher
+    source:
+      workspace: machine-learning-pw2sw
+      project: machine-learning-finals-ioh5g
+      version: 1
+
+  safely_object_detection:
+    description: >
+      General fire safety object detection covering extinguishers, exits,
+      and other safety equipment.
+    classes: []  # auto-populated after download from data.yaml
+    source:
+      workspace: hari-narayanan-tb1dg
+      project: safely-object-detection-kcujz
+      version: 1
+
+  fire_extinguisher_details:
+    description: >
+      Detailed fire extinguisher component detection — body, gauge, nozzle,
+      and other component-level annotations for condition assessment.
+    classes: []  # auto-populated after download from data.yaml
+    source:
+      workspace: fire-extinguisher-detection
+      project: fire-extinguisher-sz0p7
+      version: 1
+
+  find_empty_mounts:
+    description: >
+      Detects empty fire extinguisher mounts, brackets, and wall hooks
+      where the extinguisher is missing. Complements the custom
+      extinguisher_missing dataset.
+    classes: []  # auto-populated after download from data.yaml
+    source:
+      workspace: fire-hgcbk
+      project: find-empty-mounts
+      version: 1
+
 # Merged list of all unique classes across datasets
 all_classes:
   # Equipment detection
@@ -214,6 +271,8 @@ all_classes:
   - exit_sign_dark
   - smoke_detector_missing
   - blocked_exit
+  # Emergency lighting
+  - emergency_light
   # Construction safety
   - Hardhat
   - Mask
