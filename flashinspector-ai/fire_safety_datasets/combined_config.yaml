@@ -240,6 +240,17 @@ datasets:
       project: fire-extinguisher-sz0p7
       version: 1
 
+  find_empty_mounts:
+    description: >
+      Detects empty fire extinguisher mounts, brackets, and wall hooks
+      where the extinguisher is missing. Complements the custom
+      extinguisher_missing dataset.
+    classes: []  # auto-populated after download from data.yaml
+    source:
+      workspace: fire-hgcbk
+      project: find-empty-mounts
+      version: 1
+
 # Merged list of all unique classes across datasets
 all_classes:
   # Equipment detection
