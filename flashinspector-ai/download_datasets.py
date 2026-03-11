@@ -74,6 +74,12 @@ DATASETS = {
         "version": 1,
         "description": "Detailed fire extinguisher detection — body, gauge, nozzle, and component-level annotations.",
     },
+    "find_empty_mounts": {
+        "workspace": "fire-hgcbk",
+        "project": "find-empty-mounts",
+        "version": 1,
+        "description": "Empty fire extinguisher mount/bracket detection — missing extinguisher locations.",
+    },
 }
 
 BASE_DIR = Path(__file__).parent
