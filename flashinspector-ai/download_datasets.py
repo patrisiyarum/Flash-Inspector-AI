@@ -80,6 +80,12 @@ DATASETS = {
         "version": 1,
         "description": "Empty fire extinguisher mount/bracket detection — missing extinguisher locations.",
     },
+    "my_first_project": {
+        "workspace": "patyas-workspace",
+        "project": "my-first-project-nqfzv",
+        "version": 3,
+        "description": "Custom-trained empty fire extinguisher mount detection model.",
+    },
 }
 
 BASE_DIR = Path(__file__).parent
