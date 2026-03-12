@@ -251,6 +251,17 @@ datasets:
       project: find-empty-mounts
       version: 1
 
+  my_first_project:
+    description: >
+      Custom-trained model for empty fire extinguisher mount detection.
+      Workspace: patyas-workspace. Also available as a Roboflow serverless
+      workflow ("active-learning") for cloud-based video inference.
+    classes: []  # auto-populated after download from data.yaml
+    source:
+      workspace: patyas-workspace
+      project: my-first-project-nqfzv
+      version: 3
+
 # Merged list of all unique classes across datasets
 all_classes:
   # Equipment detection
