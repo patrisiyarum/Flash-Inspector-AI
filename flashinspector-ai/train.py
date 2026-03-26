@@ -17,28 +17,38 @@ from ultralytics import YOLO
 BASE_DIR = Path(__file__).parent
 MERGED_DIR = BASE_DIR / "merged_dataset"
 MERGED_SEG_DIR = BASE_DIR / "merged_segmentation_dataset"
+MERGED_EQUIP_DIR = BASE_DIR / "merged_equipment_dataset"
+MERGED_VIOL_DIR = BASE_DIR / "merged_violation_dataset"
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train YOLOv8 on fire safety dataset")
-    parser.add_argument("--task", choices=["detect", "segment"], default="detect",
-        help="Task: detect (S1,2,5,6) or segment (S3,4). Default: detect")
+    parser.add_argument("--task", choices=["detect", "segment", "equipment", "violation"], default="detect",
+        help="Task: detect (all), equipment (equipment-only), violation (violation-only), segment (S3/S4). Default: detect")
     parser.add_argument("--model", default=None,
-        help="Base model (default: yolov8s.pt for detect, yolov8s-seg.pt for segment)")
+        help="Base model (default: yolov8m.pt for detect, yolov8m-seg.pt for segment)")
     parser.add_argument("--epochs", type=int, default=100, help="Training epochs (default: 100)")
     parser.add_argument("--batch", type=int, default=16, help="Batch size (default: 16)")
-    parser.add_argument("--imgsz", type=int, default=640, help="Image size (default: 640)")
+    parser.add_argument("--imgsz", type=int, default=1280, help="Image size (default: 1280 for tag/detail detection)")
     parser.add_argument("--device", default=None, help="Device: 0 for GPU, cpu for CPU (auto-detect)")
     parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
     args = parser.parse_args()
 
     if args.task == "segment":
         data_dir = MERGED_SEG_DIR
-        model_name = args.model or "yolov8s-seg.pt"
+        model_name = args.model or "yolov8m-seg.pt"
         run_name = "fire_safety_seg"
+    elif args.task == "equipment":
+        data_dir = MERGED_EQUIP_DIR
+        model_name = args.model or "yolov8m.pt"
+        run_name = "fire_safety_equipment"
+    elif args.task == "violation":
+        data_dir = MERGED_VIOL_DIR
+        model_name = args.model or "yolov8m.pt"
+        run_name = "fire_safety_violation"
     else:
         data_dir = MERGED_DIR
-        model_name = args.model or "yolov8s.pt"
+        model_name = args.model or "yolov8m.pt"
         run_name = "fire_safety"
 
     data_yaml = data_dir / "data.yaml"
@@ -59,18 +69,20 @@ def main():
         name=run_name,
         exist_ok=True,
         resume=args.resume,
-        # Augmentation
-        hsv_h=0.015,
-        hsv_s=0.7,
-        hsv_v=0.4,
-        degrees=10.0,
-        translate=0.1,
+        # Augmentation — strong color jitter to prevent color shortcuts
+        hsv_h=0.03,
+        hsv_s=0.9,
+        hsv_v=0.5,
+        degrees=15.0,
+        translate=0.15,
         scale=0.5,
         fliplr=0.5,
         mosaic=1.0,
-        mixup=0.1,
+        close_mosaic=15,
+        mixup=0.15,
+        copy_paste=0.15,
         # Training params
-        patience=20,
+        patience=30,
         save=True,
         save_period=10,
         val=True,

@@ -27,6 +27,8 @@ BASE_DIR = Path(__file__).parent
 DATASET_DIR = BASE_DIR / "fire_safety_datasets"
 MERGED_DIR = BASE_DIR / "merged_dataset"
 MERGED_SEG_DIR = BASE_DIR / "merged_segmentation_dataset"
+MERGED_EQUIP_DIR = BASE_DIR / "merged_equipment_dataset"
+MERGED_VIOL_DIR = BASE_DIR / "merged_violation_dataset"
 
 # Map variant class names to canonical unified names (case-insensitive match)
 CLASS_ALIASES = {
@@ -123,12 +125,41 @@ def remap_labels(label_file: Path, class_map: dict[int, int]) -> list[str]:
     return lines
 
 
+MAX_IMAGES_PER_DATASET = 1500
+
+OVERSAMPLE_DATASETS = {
+    "find_empty_mounts": 3,
+    "extinguisher_missing": 3,
+}
+
+
+def _collect_split_files(dataset_path: Path, split: str):
+    """Collect (img_file, lbl_dir) pairs for a given split."""
+    try_splits = [split] if split != "valid" else ["valid", "val"]
+    for s in try_splits:
+        img_dirs = list(dataset_path.rglob(f"{s}/images"))
+        lbl_dirs = list(dataset_path.rglob(f"{s}/labels"))
+        if img_dirs:
+            img_dir = img_dirs[0]
+            lbl_dir = lbl_dirs[0] if lbl_dirs else None
+            files = [
+                f for f in sorted(img_dir.iterdir())
+                if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+            ]
+            return files, lbl_dir
+    return [], None
+
+
 def _merge_task_datasets(
     datasets: dict[str, dict],
     output_dir: Path,
     use_aliases: bool = True,
 ) -> None:
-    """Merge datasets into output_dir. use_aliases=False for segmentation (no class alignment)."""
+    """Merge datasets into output_dir with balancing.
+
+    Caps each dataset at MAX_IMAGES_PER_DATASET and oversamples
+    rare datasets listed in OVERSAMPLE_DATASETS.
+    """
     dataset_classes = {n: info["classes"] for n, info in datasets.items()}
     if use_aliases:
         unified_classes, class_mappings = build_class_mapping(dataset_classes)
@@ -159,36 +190,35 @@ def _merge_task_datasets(
             continue
         class_map = class_mappings[name]
         dataset_images = 0
+        oversample = OVERSAMPLE_DATASETS.get(name, 1)
 
         for split in ["train", "valid", "test"]:
-            try_splits = [split] if split != "valid" else ["valid", "val"]
-            img_dirs, lbl_dirs = [], []
-            for s in try_splits:
-                img_dirs = list(dataset_path.rglob(f"{s}/images"))
-                lbl_dirs = list(dataset_path.rglob(f"{s}/labels"))
-                if img_dirs:
-                    break
-            if not img_dirs:
+            files, lbl_dir = _collect_split_files(dataset_path, split)
+            if not files:
                 continue
-            img_dir = img_dirs[0]
-            lbl_dir = lbl_dirs[0] if lbl_dirs else None
 
-            for img_file in img_dir.iterdir():
-                if img_file.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
-                    continue
-                new_name = f"{name}_{img_file.name}"
-                shutil.copy2(img_file, output_dir / split / "images" / new_name)
-                if lbl_dir:
-                    label_name = img_file.stem + ".txt"
-                    label_file = lbl_dir / label_name
-                    if label_file.exists():
-                        remapped = remap_labels(label_file, class_map)
-                        (output_dir / split / "labels" / f"{name}_{label_name}").write_text(
-                            "\n".join(remapped) + "\n" if remapped else ""
-                        )
-                dataset_images += 1
+            cap = MAX_IMAGES_PER_DATASET if split == "train" else len(files)
+            files_to_use = files[:cap]
 
-        logger.info(f"  {name}: {dataset_images} images")
+            for copy_idx in range(oversample if split == "train" else 1):
+                for img_file in files_to_use:
+                    suffix = f"_dup{copy_idx}" if copy_idx > 0 else ""
+                    new_name = f"{name}{suffix}_{img_file.name}"
+                    shutil.copy2(img_file, output_dir / split / "images" / new_name)
+                    if lbl_dir:
+                        label_name = img_file.stem + ".txt"
+                        label_file = lbl_dir / label_name
+                        if label_file.exists():
+                            remapped = remap_labels(label_file, class_map)
+                            (output_dir / split / "labels" / f"{name}{suffix}_{label_name}").write_text(
+                                "\n".join(remapped) + "\n" if remapped else ""
+                            )
+                    dataset_images += 1
+
+        extra = f" (oversampled {oversample}x)" if oversample > 1 else ""
+        if len(files) > MAX_IMAGES_PER_DATASET:
+            extra += f" (capped from {len(files)} to {MAX_IMAGES_PER_DATASET} train images)"
+        logger.info(f"  {name}: {dataset_images} images{extra}")
         total_images += dataset_images
 
     data_yaml = {
@@ -251,5 +281,119 @@ def merge_datasets():
         logger.info("\nNo segmentation datasets to merge.")
 
 
+# Classes used for the split-model pipeline
+EQUIPMENT_CANONICAL = {
+    "fire_extinguisher", "fire_blanket", "smoke_detector", "manual_call_point",
+    "emergency_exit", "fire_suppression_sign", "flashing_light_orb", "sounder",
+    "notification_appliance", "pull_station", "fire_alarm_panel", "emergency_light",
+    "alarm", "alarm_bell", "alarm_lever", "fire", "smoke",
+}
+
+VIOLATION_CANONICAL = {
+    "empty_mount", "extinguisher_cabinet_empty", "non_compliant_tag",
+    "yellow_tag", "red_tag", "white_tag", "exit_sign_dark",
+    "smoke_detector_missing", "blocked_exit",
+}
+
+
+def _filter_labels_by_classes(label_file: Path, allowed_ids: set[int]) -> list[str]:
+    """Keep only label lines whose class ID is in allowed_ids."""
+    lines = []
+    for line in label_file.read_text().strip().splitlines():
+        parts = line.strip().split()
+        if parts and int(parts[0]) in allowed_ids:
+            lines.append(line.strip())
+    return lines
+
+
+def build_split_datasets():
+    """Build separate equipment-only and violation-only datasets from merged_dataset.
+
+    Reads the already-merged data.yaml to get the unified class list,
+    then filters labels to produce two focused datasets.
+    """
+    merged_yaml = MERGED_DIR / "data.yaml"
+    if not merged_yaml.exists():
+        logger.info("merged_dataset not found, skipping split-model datasets.")
+        return
+
+    with open(merged_yaml) as f:
+        merged_cfg = yaml.safe_load(f)
+
+    all_names = merged_cfg.get("names", [])
+    if isinstance(all_names, dict):
+        all_names = [all_names[k] for k in sorted(all_names.keys())]
+
+    equip_ids = {i for i, n in enumerate(all_names) if n in EQUIPMENT_CANONICAL}
+    viol_ids = {i for i, n in enumerate(all_names) if n in VIOLATION_CANONICAL}
+
+    if not equip_ids and not viol_ids:
+        logger.info("No equipment or violation classes found in merged_dataset — skipping split.")
+        return
+
+    for target_dir, keep_ids, label in [
+        (MERGED_EQUIP_DIR, equip_ids, "equipment"),
+        (MERGED_VIOL_DIR, viol_ids, "violation"),
+    ]:
+        if not keep_ids:
+            continue
+
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+
+        # Remap kept IDs to contiguous 0..N
+        kept_names = [all_names[i] for i in sorted(keep_ids)]
+        old_to_new = {old_id: new_id for new_id, old_id in enumerate(sorted(keep_ids))}
+
+        img_count = 0
+        for split in ["train", "valid", "test"]:
+            src_img = MERGED_DIR / split / "images"
+            src_lbl = MERGED_DIR / split / "labels"
+            dst_img = target_dir / split / "images"
+            dst_lbl = target_dir / split / "labels"
+            dst_img.mkdir(parents=True, exist_ok=True)
+            dst_lbl.mkdir(parents=True, exist_ok=True)
+
+            if not src_img.exists():
+                continue
+
+            for img_file in sorted(src_img.iterdir()):
+                lbl_file = src_lbl / (img_file.stem + ".txt")
+                if not lbl_file.exists():
+                    continue
+
+                # Only include images that have at least one label in the target set
+                kept_lines = _filter_labels_by_classes(lbl_file, keep_ids)
+                if not kept_lines:
+                    continue
+
+                # Remap class IDs
+                remapped = []
+                for line in kept_lines:
+                    parts = line.split()
+                    parts[0] = str(old_to_new[int(parts[0])])
+                    remapped.append(" ".join(parts))
+
+                shutil.copy2(img_file, dst_img / img_file.name)
+                (dst_lbl / lbl_file.name).write_text("\n".join(remapped) + "\n")
+                img_count += 1
+
+        data_yaml = {
+            "path": str(target_dir.resolve()),
+            "train": "train/images",
+            "val": "valid/images",
+            "test": "test/images",
+            "nc": len(kept_names),
+            "names": kept_names,
+        }
+        with open(target_dir / "data.yaml", "w") as f:
+            yaml.dump(data_yaml, f, default_flow_style=False, sort_keys=False)
+
+        logger.info(f"\n  Split-model {label} dataset: {target_dir}")
+        logger.info(f"    Classes ({len(kept_names)}): {kept_names}")
+        logger.info(f"    Images: {img_count}")
+
+
 if __name__ == "__main__":
     merge_datasets()
+    build_split_datasets()
