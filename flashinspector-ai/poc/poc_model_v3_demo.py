@@ -809,7 +809,10 @@ def main():
     load_dotenv(BASE_DIR / ".env")
     api_key = os.environ.get("ROBOFLOW_API_KEY")
     if not api_key or api_key == "your_roboflow_api_key_here":
-        logger.error("Set ROBOFLOW_API_KEY in .env file")
+        logger.error(
+            "Missing ROBOFLOW_API_KEY. Copy .env.template to .env in flashinspector-ai/ "
+            "and set the key, or run: export ROBOFLOW_API_KEY='your_private_key'"
+        )
         sys.exit(1)
 
     # Load model
