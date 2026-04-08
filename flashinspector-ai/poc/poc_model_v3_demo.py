@@ -371,14 +371,6 @@ def generate_html_report(all_results: list[dict], output_path: Path):
 
     total_detections = sum(r["total_detections"] for r in all_results)
     total_sources = len(all_results)
-    sources_with_detections = sum(
-        1 for r in all_results
-        if r["total_detections"] > 0
-    )
-    sources_with_violations = sum(
-        1 for r in all_results
-        if r.get("has_violation") or r.get("violation_frames", 0) > 0
-    )
 
     # Count by class
     class_counts = {}
@@ -391,11 +383,14 @@ def generate_html_report(all_results: list[dict], output_path: Path):
             cls = d["class"]
             class_counts[cls] = class_counts.get(cls, 0) + 1
 
-    class_rows = "".join(
-        f'<tr><td><span class="det-tag {_det_css(cls)}">{cls}</span></td>'
-        f'<td>{count}</td></tr>'
-        for cls, count in sorted(class_counts.items(), key=lambda x: -x[1])
-    )
+    if class_counts:
+        class_rows = "".join(
+            f'<tr><td><span class="class-pill {_det_css(cls)}">{cls}</span></td>'
+            f'<td class="num">{count}</td></tr>'
+            for cls, count in sorted(class_counts.items(), key=lambda x: -x[1])
+        )
+    else:
+        class_rows = '<tr><td colspan="2" class="muted">No detections</td></tr>'
 
     # Build result sections
     sections_html = []
@@ -405,275 +400,245 @@ def generate_html_report(all_results: list[dict], output_path: Path):
         else:
             sections_html.append(_video_section_html(r))
 
+    num_classes = len(class_counts)
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FlashInspector AI — Model v3 PoC Report</title>
+<title>FlashInspector AI — PoC Report</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f1117; color: #e0e0e0; }}
-
-  .header {{
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    padding: 40px 32px;
-    border-bottom: 3px solid #e94560;
+  body {{
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+      "Apple Color Emoji", Arial, sans-serif;
+    background: #ffffff;
+    color: #37352f;
+    line-height: 1.5;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
   }}
-  .header h1 {{ font-size: 2.2rem; color: #fff; margin-bottom: 8px; }}
-  .header h1 span {{ color: #e94560; }}
-  .header .subtitle {{ color: #a0a0b0; font-size: 1.1rem; }}
-
+  .page {{
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }}
+  .title {{
+    font-size: 1.875rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+    color: #37352f;
+  }}
+  .meta {{
+    font-size: 13px;
+    color: #9b9a97;
+    margin-bottom: 32px;
+  }}
   .summary {{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 20px;
-    padding: 32px;
-    max-width: 1200px;
-    margin: 0 auto;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 40px;
   }}
-  .stat-card {{
-    background: #1a1d28;
-    border-radius: 12px;
-    padding: 24px;
-    text-align: center;
-    border: 1px solid #2a2d3a;
+  .stat {{
+    border: 1px solid rgba(55, 53, 47, 0.09);
+    border-radius: 4px;
+    padding: 16px 14px;
+    background: #fafafa;
   }}
-  .stat-card .number {{ font-size: 2.5rem; font-weight: 700; color: #e94560; }}
-  .stat-card .label {{ font-size: 0.85rem; color: #808090; margin-top: 4px; }}
-  .stat-card.green .number {{ color: #00c853; }}
-  .stat-card.blue .number {{ color: #448aff; }}
-  .stat-card.orange .number {{ color: #ff9100; }}
-  .stat-card.purple .number {{ color: #b388ff; }}
-
-  .section-title {{
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 32px 16px;
-    color: #fff;
-    font-size: 1.3rem;
+  .stat .number {{
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #37352f;
+    letter-spacing: -0.02em;
   }}
-
-  .model-info, .class-breakdown {{
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 32px 24px;
+  .stat .label {{
+    font-size: 12px;
+    color: #9b9a97;
+    margin-top: 4px;
   }}
-  .model-info table, .class-breakdown table {{
-    width: 100%;
-    background: #1a1d28;
-    border-radius: 12px;
-    border-collapse: collapse;
-    overflow: hidden;
-  }}
-  .model-info th, .class-breakdown th {{
-    background: #222538;
-    text-align: left;
-    padding: 12px 20px;
-    color: #a0a0b0;
-    font-size: 0.85rem;
+  h2 {{
+    font-size: 0.75rem;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9b9a97;
+    margin: 36px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(55, 53, 47, 0.09);
   }}
-  .model-info td, .class-breakdown td {{
-    padding: 12px 20px;
-    border-top: 1px solid #2a2d3a;
+  .class-breakdown {{
+    border: 1px solid rgba(55, 53, 47, 0.09);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
   }}
+  .class-breakdown table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }}
+  .class-breakdown th {{
+    text-align: left;
+    padding: 10px 14px;
+    background: #f7f6f3;
+    color: #787774;
+    font-weight: 500;
+    font-size: 12px;
+  }}
+  .class-breakdown td {{
+    padding: 10px 14px;
+    border-top: 1px solid rgba(55, 53, 47, 0.06);
+  }}
+  .class-breakdown td.num {{
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #37352f;
+  }}
+  .class-breakdown .muted {{
+    color: #9b9a97;
+    font-style: normal;
+  }}
+  .class-pill {{
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+  }}
+  .class-pill.det-violation {{ background: #fdecea; color: #6b2c2c; }}
+  .class-pill.det-equipment {{ background: #e8f5e9; color: #1b5e20; }}
+  .class-pill.det-other {{ background: #e3f2fd; color: #0d47a1; }}
 
-  .content {{ max-width: 1200px; margin: 0 auto; padding: 0 32px 48px; }}
+  .content {{ margin-top: 8px; }}
 
   .result-section {{
-    background: #1a1d28;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    border: 1px solid #2a2d3a;
+    border: 1px solid rgba(55, 53, 47, 0.09);
+    border-radius: 4px;
+    margin-bottom: 20px;
     overflow: hidden;
+    background: #fff;
   }}
   .result-header {{
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    background: #222538;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #fafafa;
+    border-bottom: 1px solid rgba(55, 53, 47, 0.06);
     flex-wrap: wrap;
-    gap: 8px;
   }}
-  .result-header h3 {{ font-size: 0.95rem; color: #fff; font-family: monospace; word-break: break-all; }}
-  .result-meta {{ padding: 8px 24px; color: #808090; font-size: 0.85rem; border-bottom: 1px solid #2a2d3a; }}
-
+  .result-header h3 {{
+    font-size: 14px;
+    font-weight: 500;
+    color: #37352f;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }}
+  .result-meta {{
+    padding: 10px 16px;
+    font-size: 12px;
+    color: #9b9a97;
+    border-bottom: 1px solid rgba(55, 53, 47, 0.06);
+  }}
   .badge {{
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-weight: 600;
-    font-size: 0.8rem;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
     white-space: nowrap;
+    flex-shrink: 0;
   }}
-  .badge-pass {{ background: #00c85322; color: #00c853; }}
-  .badge-fail {{ background: #e9456022; color: #e94560; }}
-  .badge-info {{ background: #448aff22; color: #448aff; }}
+  .badge-pass {{ background: #f0fdf4; color: #166534; }}
+  .badge-fail {{ background: #fef2f2; color: #991b1b; }}
+  .badge-info {{ background: #eff6ff; color: #1e40af; }}
 
-  .frames-grid {{ padding: 16px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }}
+  .frames-grid {{
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }}
   .frame-card {{
-    border: 1px solid #2a2d3a;
-    border-radius: 8px;
+    border: 1px solid rgba(55, 53, 47, 0.09);
+    border-radius: 4px;
     overflow: hidden;
+    background: #fafafa;
   }}
-  .frame-card img {{ width: 100%; display: block; }}
-  .frame-info {{ padding: 10px 14px; background: #222538; font-size: 0.85rem; }}
-
+  .frame-card img {{ width: 100%; display: block; vertical-align: middle; }}
+  .frame-info {{
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #37352f;
+    line-height: 1.45;
+  }}
   .det-tag {{
     display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    margin: 2px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    margin: 2px 2px 0 0;
   }}
-  .det-violation {{ background: #e9456033; color: #ff6b81; }}
-  .det-equipment {{ background: #00c85322; color: #69f0ae; }}
-  .det-other {{ background: #448aff22; color: #82b1ff; }}
+  .det-tag.det-violation {{ background: #fdecea; color: #6b2c2c; }}
+  .det-tag.det-equipment {{ background: #e8f5e9; color: #1b5e20; }}
+  .det-tag.det-other {{ background: #e3f2fd; color: #0d47a1; }}
 
-  .no-det {{ color: #606070; padding: 16px 0; font-style: italic; }}
-
-  .how-it-works {{
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 32px 32px;
-  }}
-  .how-it-works .pipeline {{
-    background: #1a1d28;
-    border-radius: 12px;
-    padding: 24px;
-    border: 1px solid #2a2d3a;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    justify-content: center;
-  }}
-  .pipeline-step {{
-    background: #222538;
-    border-radius: 8px;
-    padding: 16px 20px;
-    text-align: center;
-    min-width: 140px;
-  }}
-  .pipeline-step .step-title {{ font-size: 0.8rem; color: #a0a0b0; text-transform: uppercase; }}
-  .pipeline-step .step-desc {{ font-size: 0.95rem; color: #fff; margin-top: 4px; }}
-  .pipeline-arrow {{ color: #e94560; font-size: 1.5rem; font-weight: bold; }}
+  .no-det {{ color: #9b9a97; padding: 12px 16px; font-size: 13px; }}
 
   .footer {{
-    text-align: center;
-    padding: 32px;
-    color: #505060;
-    font-size: 0.85rem;
-    border-top: 1px solid #1a1d28;
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(55, 53, 47, 0.09);
+    font-size: 12px;
+    color: #9b9a97;
   }}
 
-  @media (max-width: 768px) {{
+  @media (max-width: 600px) {{
+    .summary {{ grid-template-columns: 1fr; }}
     .frames-grid {{ grid-template-columns: 1fr; }}
-    .summary {{ grid-template-columns: repeat(2, 1fr); }}
   }}
 </style>
 </head>
 <body>
+<div class="page">
+  <h1 class="title">FlashInspector AI — Model v3 PoC</h1>
+  <p class="meta">{datetime.now().strftime('%B %d, %Y · %I:%M %p')}</p>
 
-<div class="header">
-    <h1><span>FlashInspector AI</span> — Model v3 Proof of Concept</h1>
-    <div class="subtitle">
-        Automated Fire Safety Violation Detection &bull;
-        Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
+  <div class="summary">
+    <div class="stat">
+      <div class="number">{total_sources}</div>
+      <div class="label">Sources analyzed</div>
     </div>
-</div>
+    <div class="stat">
+      <div class="number">{total_detections}</div>
+      <div class="label">Detections</div>
+    </div>
+    <div class="stat">
+      <div class="number">{num_classes}</div>
+      <div class="label">Classes</div>
+    </div>
+  </div>
 
-<div class="summary">
-    <div class="stat-card blue">
-        <div class="number">{total_sources}</div>
-        <div class="label">Sources Analyzed</div>
-    </div>
-    <div class="stat-card green">
-        <div class="number">{total_detections}</div>
-        <div class="label">Total Detections</div>
-    </div>
-    <div class="stat-card">
-        <div class="number">{sources_with_violations}</div>
-        <div class="label">Sources with Violations</div>
-    </div>
-    <div class="stat-card orange">
-        <div class="number">{sources_with_detections}</div>
-        <div class="label">Sources with Findings</div>
-    </div>
-    <div class="stat-card purple">
-        <div class="number">{len(class_counts)}</div>
-        <div class="label">Unique Classes Detected</div>
-    </div>
-</div>
-
-<h2 class="section-title">How Model v3 Works</h2>
-<div class="how-it-works">
-    <div class="pipeline">
-        <div class="pipeline-step">
-            <div class="step-title">Step 1</div>
-            <div class="step-desc">Upload Image/Video</div>
-        </div>
-        <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step">
-            <div class="step-title">Step 2</div>
-            <div class="step-desc">Roboflow Cloud API</div>
-        </div>
-        <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step">
-            <div class="step-title">Step 3</div>
-            <div class="step-desc">YOLOv8 v3 Detection</div>
-        </div>
-        <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step">
-            <div class="step-title">Step 4</div>
-            <div class="step-desc">Bounding Boxes + Classes</div>
-        </div>
-        <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step">
-            <div class="step-title">Step 5</div>
-            <div class="step-desc">Violation Rules Engine</div>
-        </div>
-        <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step">
-            <div class="step-title">Step 6</div>
-            <div class="step-desc">Inspection Report</div>
-        </div>
-    </div>
-</div>
-
-<h2 class="section-title">Model Configuration</h2>
-<div class="model-info">
+  <h2>Detected classes</h2>
+  <div class="class-breakdown">
     <table>
-        <tr><th>Parameter</th><th>Value</th></tr>
-        <tr><td>Model</td><td><strong>{DEFAULT_WORKSPACE}/{DEFAULT_PROJECT} v{DEFAULT_VERSION}</strong></td></tr>
-        <tr><td>Hosting</td><td>Roboflow Serverless Inference API (cloud)</td></tr>
-        <tr><td>Architecture</td><td>YOLOv8 (custom-trained on fire safety data)</td></tr>
-        <tr><td>Primary Capability</td><td>Empty fire extinguisher mount detection, fire equipment identification</td></tr>
-        <tr><td>Confidence Threshold</td><td>{CONFIDENCE}%</td></tr>
-        <tr><td>Inference Mode</td><td>REST API (hosted) — no local GPU required</td></tr>
+      <tr><th>Class</th><th style="text-align:right">Count</th></tr>
+      {class_rows}
     </table>
-</div>
+  </div>
 
-{"<h2 class='section-title'>Detection Class Breakdown</h2>" + '''
-<div class="class-breakdown">
-    <table>
-        <tr><th>Class</th><th>Count</th></tr>
-        ''' + class_rows + '''
-    </table>
-</div>''' if class_rows else ""}
-
-<h2 class="section-title">Detailed Results</h2>
-<div class="content">
+  <h2>Detailed results</h2>
+  <div class="content">
     {''.join(sections_html)}
-</div>
+  </div>
 
-<div class="footer">
-    FlashInspector AI &copy; {datetime.now().year} FlashInspector Inc. &bull;
-    Model v3 Proof of Concept &bull; Confidential
+  <div class="footer">
+    FlashInspector AI · Model v3 proof of concept
+  </div>
 </div>
-
 </body>
 </html>"""
 
