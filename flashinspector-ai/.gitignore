@@ -1,9 +1,8 @@
 # Environment variables
 .env
 
-# Datasets (large files)
+# Datasets (large files) — keep local / Zenodo; do not commit (GitHub push limit)
 fire_safety_datasets/*/
-!fire_safety_datasets/13358169/
 merged_dataset/
 merged_segmentation_dataset/
 merged_equipment_dataset/
