@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-FlashInspector AI — Model v3 Proof of Concept Demo
+FlashInspector AI — Model v6 Proof of Concept Demo
 
-Demonstrates the Roboflow-hosted Model v3 (fire safety detection)
+Demonstrates the Roboflow-hosted Model v6 (fire safety detection)
 by running inference on:
   - Local video files (if available / downloaded from Git LFS)
   - Sample images from the Roboflow project dataset
@@ -10,24 +10,31 @@ by running inference on:
 
 Produces:
   1. Annotated images saved to        poc_results/frames/
-  2. Per-source JSON detection results poc_results/
+  2. Per-source JSON detection results poc_results/poc_v{N}_results.json (N = dataset version)
   3. A self-contained HTML report      poc_results/poc_report.html
+  4. Optional per-video HTML reports   poc_results/reports/ (see --per-video-reports-dir)
 
 Usage:
     python poc_model_v3_demo.py                        # auto-detect: dataset images
     python poc_model_v3_demo.py --images img1.jpg img2.jpg
     python poc_model_v3_demo.py --videos vid1.mp4      # if LFS videos available
     python poc_model_v3_demo.py --sample-interval 2    # frame interval for videos
+    python poc_model_v3_demo.py --videos a.mp4 b.mp4 --per-video-reports-dir reports
 """
+
+from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +50,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # flashinspector-ai/
 VIDEOS_DIR = BASE_DIR / "videos"
 RESULTS_DIR = BASE_DIR / "poc_results"
 FRAMES_DIR = RESULTS_DIR / "frames"
+DEFAULT_REPORTS_SUBDIR = "reports"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,10 +60,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WORKSPACE = "patyas-workspace"
 DEFAULT_PROJECT = "my-first-project-nqfzv"
-DEFAULT_VERSION = 3
+DEFAULT_VERSION = 6
 
 # Confidence threshold (0-100 for Roboflow API)
 CONFIDENCE = 30
+
+# Transient Roboflow / network failures (e.g. HTTP 500)
+INFERENCE_MAX_RETRIES = 6
+
+# Hosted detect API payload limit — scale down tall/wide frames before JPEG upload
+MAX_INFERENCE_EDGE_PX = 1280
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv"}
@@ -66,7 +80,7 @@ VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv"}
 # ---------------------------------------------------------------------------
 
 def get_roboflow_model(api_key: str):
-    """Return a Roboflow model object for v3."""
+    """Return a Roboflow model object for the configured dataset version."""
     from roboflow import Roboflow
 
     rf = Roboflow(api_key=api_key)
@@ -122,17 +136,115 @@ def download_dataset_images(api_key: str, max_images: int = 20) -> list[Path]:
 # Prediction helpers
 # ---------------------------------------------------------------------------
 
+def resize_frame_for_inference(frame_bgr: np.ndarray) -> np.ndarray:
+    """Shrink so longest side is at most MAX_INFERENCE_EDGE_PX (avoids API 413)."""
+    h, w = frame_bgr.shape[:2]
+    m = max(h, w)
+    if m <= MAX_INFERENCE_EDGE_PX:
+        return frame_bgr
+    scale = MAX_INFERENCE_EDGE_PX / m
+    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+    return cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+
+
+def _scale_predictions_to_original(
+    preds: list[dict],
+    orig_w: int,
+    orig_h: int,
+    scaled_w: int,
+    scaled_h: int,
+) -> list[dict]:
+    """Map Roboflow box coords from resized inference image back to full frame."""
+    if scaled_w <= 0 or scaled_h <= 0:
+        return preds
+    sx = orig_w / scaled_w
+    sy = orig_h / scaled_h
+    out: list[dict] = []
+    for p in preds:
+        q = dict(p)
+        q["x"] = float(p["x"]) * sx
+        q["y"] = float(p["y"]) * sy
+        q["width"] = float(p.get("width", 0)) * sx
+        q["height"] = float(p.get("height", 0)) * sy
+        out.append(q)
+    return out
+
+
+def predict_file_with_retry(model, file_path: Path | str) -> dict:
+    """Run file-based inference via Roboflow; retry on transient HTTP / network errors."""
+    from requests.exceptions import HTTPError, RequestException
+
+    path_str = str(file_path)
+    for attempt in range(INFERENCE_MAX_RETRIES):
+        try:
+            return model.predict(path_str, confidence=CONFIDENCE).json()
+        except HTTPError as e:
+            code = getattr(getattr(e, "response", None), "status_code", None) or 0
+            retriable = code in (408, 413, 429, 500, 502, 503, 504)
+            if retriable and attempt + 1 < INFERENCE_MAX_RETRIES:
+                delay = min(90.0, 2.0**attempt)
+                logger.warning(
+                    "Roboflow HTTP %s; retry inference %s/%s in %.0fs...",
+                    code,
+                    attempt + 1,
+                    INFERENCE_MAX_RETRIES,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+            raise
+        except RequestException as e:
+            if attempt + 1 < INFERENCE_MAX_RETRIES:
+                delay = min(90.0, 2.0**attempt)
+                logger.warning(
+                    "Inference request failed; retry %s/%s in %.0fs: %s",
+                    attempt + 1,
+                    INFERENCE_MAX_RETRIES,
+                    delay,
+                    e,
+                )
+                time.sleep(delay)
+                continue
+            raise
+
+
 def predict_image_file(model, image_path: Path) -> dict:
     """Run inference on an image file via the Roboflow hosted API."""
-    prediction = model.predict(str(image_path), confidence=CONFIDENCE).json()
-    return prediction
+    return predict_file_with_retry(model, image_path)
 
 
 def predict_frame(model, frame_bgr: np.ndarray, tmp_path: Path) -> dict:
     """Run inference on a BGR frame via the Roboflow hosted API."""
-    cv2.imwrite(str(tmp_path), frame_bgr)
-    prediction = model.predict(str(tmp_path), confidence=CONFIDENCE).json()
-    return prediction
+    del tmp_path  # legacy arg; use a unique temp file per frame to avoid truncated JPEG reuse
+    from requests.exceptions import HTTPError
+
+    scaled = resize_frame_for_inference(frame_bgr)
+    last_disk_err: OSError | None = None
+    for wattempt in range(3):
+        unique = RESULTS_DIR / f"_tmp_frame_{uuid.uuid4().hex}.jpg"
+        try:
+            if not cv2.imwrite(str(unique), scaled, [cv2.IMWRITE_JPEG_QUALITY, 88]):
+                raise OSError("cv2.imwrite returned False")
+            raw = predict_file_with_retry(model, unique)
+            preds = raw.get("predictions", [])
+            oh, ow = frame_bgr.shape[:2]
+            sh, sw = scaled.shape[:2]
+            raw["predictions"] = _scale_predictions_to_original(preds, ow, oh, sw, sh)
+            return raw
+        except HTTPError:
+            raise
+        except OSError as e:
+            last_disk_err = e
+            if wattempt + 1 < 3:
+                logger.warning(
+                    "Temp JPEG issue (%s); rewrite frame and retry %s/3",
+                    e,
+                    wattempt + 1,
+                )
+                time.sleep(0.2)
+        finally:
+            unique.unlink(missing_ok=True)
+    raise last_disk_err if last_disk_err else OSError("predict_frame failed")
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +378,7 @@ def process_image(model, image_path: Path) -> dict:
     if not preds:
         logger.info("    No detections")
 
-    # Classify violations — model v3 class names
+    # Classify violations — hosted model class names
     violation_classes = {
         "empty_mount", "extinguisher_cabinet_empty", "bracket_empty",
         "missing fire extinguisher",
@@ -366,15 +478,213 @@ def process_video(model, video_path: Path, interval_sec: float) -> dict:
 # HTML report generation
 # ---------------------------------------------------------------------------
 
+def class_counts_for_result(r: dict) -> dict[str, int]:
+    """Aggregate detection counts by class for one image or video result."""
+    counts: dict[str, int] = {}
+    dets = r.get("detections", [])
+    if dets:
+        for d in dets:
+            cls = d["class"]
+            counts[cls] = counts.get(cls, 0) + 1
+    else:
+        for f in r.get("frames", []):
+            for d in f.get("detections", []):
+                cls = d["class"]
+                counts[cls] = counts.get(cls, 0) + 1
+    return counts
+
+
+def dominant_class_and_count(counts: dict[str, int]) -> tuple[str, int]:
+    """Class with highest count; ties broken by lexicographic class name."""
+    if not counts:
+        return "no_detections", 0
+    top_cls, top_n = max(counts.items(), key=lambda x: (x[1], x[0]))
+    return top_cls, top_n
+
+
+def sanitize_report_slug(text: str, max_len: int = 80) -> str:
+    """Filesystem-safe slug for report filenames."""
+    s = text.strip().lower().replace(" ", "_")
+    out = []
+    for ch in s:
+        if ch.isalnum() or ch in "-_":
+            out.append(ch)
+        elif ch in ".:":
+            out.append("_")
+    slug = "".join(out).strip("_") or "class"
+    return slug[:max_len]
+
+
+def per_video_report_path(
+    r: dict,
+    reports_dir: Path,
+) -> Path:
+    """
+    Path for a single-source HTML report: <dominant_class>_<count>.html,
+    or with __<video_stem> if that name already exists (collision).
+    """
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    counts = class_counts_for_result(r)
+    cls, n = dominant_class_and_count(counts)
+    slug = sanitize_report_slug(cls)
+    base = f"{slug}_{n}.html"
+    path = reports_dir / base
+    if not path.exists():
+        return path
+    stem = Path(r["source"]).stem
+    return reports_dir / f"{slug}_{n}__{sanitize_report_slug(stem, 120)}.html"
+
+
+def write_per_video_reports(all_results: list[dict], reports_dir: Path) -> list[Path]:
+    """Write one self-contained HTML report per result; return paths written."""
+    written: list[Path] = []
+    for r in all_results:
+        out = per_video_report_path(r, reports_dir)
+        generate_html_report([r], out)
+        written.append(out)
+    return written
+
+
+def merge_results_for_history(previous: list[dict], current: list[dict]) -> list[dict]:
+    """
+    Merge results for cumulative reporting, replacing older entries by source name.
+    """
+    merged: dict[str, dict] = {}
+    for item in previous:
+        src = item.get("source")
+        if src:
+            merged[src] = item
+    for item in current:
+        src = item.get("source")
+        if src:
+            merged[src] = item
+    return list(merged.values())
+
+
+def _first_group(pattern: str, text: str, flags: int = 0, default: str = "") -> str:
+    m = re.search(pattern, text, flags)
+    return m.group(1).strip() if m else default
+
+
+def parse_single_report_html(report_path: Path) -> dict | None:
+    """
+    Parse a per-source HTML report and reconstruct a result dict.
+    """
+    try:
+        content = report_path.read_text()
+    except Exception as e:
+        logger.warning(f"Could not read report {report_path.name}: {e}")
+        return None
+
+    source = html.unescape(_first_group(r"<h3>(.*?)</h3>", content, re.DOTALL))
+    if not source:
+        return None
+
+    meta = _first_group(r'<div class="result-meta">\s*(.*?)\s*</div>', content, re.DOTALL)
+    resolution = _first_group(r"Resolution:\s*([0-9]+x[0-9]+)", meta, default="unknown")
+    total_det = int(_first_group(r"Detections:\s*(\d+)", meta, default="0") or "0")
+    duration_text = _first_group(r"Duration:\s*([0-9.]+)s", meta, default="")
+    duration = float(duration_text) if duration_text else None
+    badge_text = html.unescape(
+        _first_group(r'<span class="badge [^"]+">(.*?)</span>', content, re.DOTALL)
+    )
+
+    is_video = "Duration:" in meta
+    img_info_pairs = re.findall(
+        r'<img src="data:image/jpeg;base64,([^"]+)"[^>]*>\s*<div class="frame-info">\s*(.*?)\s*</div>',
+        content,
+        re.DOTALL,
+    )
+    no_det = ("No detections in sampled frames." in content) or ("<em>No detections</em>" in content)
+
+    if is_video:
+        frames = []
+        for b64, info_html in img_info_pairs:
+            info_html = html.unescape(info_html)
+            ts_text = _first_group(r"<strong>([0-9.]+)s</strong>", info_html, default="0")
+            ts = float(ts_text) if ts_text else 0.0
+            detections = []
+            for cls, pct in re.findall(
+                r'<span class="det-tag [^"]+">\s*(.*?)\s*\((\d+)%\)\s*</span>',
+                info_html,
+                re.DOTALL,
+            ):
+                detections.append({
+                    "class": html.unescape(cls).strip(),
+                    "confidence": max(0.0, min(1.0, int(pct) / 100.0)),
+                })
+            frames.append({
+                "timestamp_sec": ts,
+                "detections": detections,
+                "annotated_b64": b64,
+            })
+
+        viol_frames = int(
+            _first_group(r"(\d+)\s+Violation Frame\(s\)", badge_text, default="0") or "0"
+        )
+        return {
+            "source": source,
+            "source_type": "video",
+            "duration_sec": duration if duration is not None else 0.0,
+            "resolution": resolution,
+            "total_detections": total_det,
+            "frames_with_detections": len([f for f in frames if f.get("detections")]),
+            "violation_frames": viol_frames,
+            "frames": [] if no_det else frames,
+        }
+
+    detections = []
+    annotated_b64 = img_info_pairs[0][0] if img_info_pairs else ""
+    info_html = html.unescape(img_info_pairs[0][1]) if img_info_pairs else ""
+    for cls, pct in re.findall(
+        r'<span class="det-tag [^"]+">\s*(.*?)\s*\((\d+)%\)\s*</span>',
+        info_html,
+        re.DOTALL,
+    ):
+        detections.append({
+            "class": html.unescape(cls).strip(),
+            "confidence": max(0.0, min(1.0, int(pct) / 100.0)),
+        })
+    has_violation = "Violation Detected" in badge_text
+    return {
+        "source": source,
+        "source_type": "image",
+        "resolution": resolution,
+        "total_detections": total_det,
+        "has_violation": has_violation,
+        "detections": [] if no_det else detections,
+        "annotated_b64": annotated_b64,
+    }
+
+
+def migrate_reports_dir_to_results(reports_dir: Path) -> list[dict]:
+    """
+    Parse per-source HTML reports and return reconstructed result objects.
+    """
+    if not reports_dir.exists():
+        return []
+    migrated = []
+    for report_path in sorted(reports_dir.glob("*.html")):
+        parsed = parse_single_report_html(report_path)
+        if parsed:
+            migrated.append(parsed)
+    if migrated:
+        logger.info(f"Migrated {len(migrated)} result(s) from {reports_dir}")
+    return migrated
+
+
 def generate_html_report(all_results: list[dict], output_path: Path):
     """Generate a self-contained HTML report with embedded images."""
 
-    total_detections = sum(r["total_detections"] for r in all_results)
-    total_sources = len(all_results)
+    # Exclude empty sources so the report focuses on actionable findings.
+    results_with_detections = [r for r in all_results if r.get("total_detections", 0) > 0]
+
+    total_detections = sum(r["total_detections"] for r in results_with_detections)
+    total_sources = len(results_with_detections)
 
     # Count by class
     class_counts = {}
-    for r in all_results:
+    for r in results_with_detections:
         dets = r.get("detections", [])
         if not dets:
             for f in r.get("frames", []):
@@ -394,7 +704,7 @@ def generate_html_report(all_results: list[dict], output_path: Path):
 
     # Build result sections
     sections_html = []
-    for r in all_results:
+    for r in results_with_detections:
         if r["source_type"] == "image":
             sections_html.append(_image_section_html(r))
         else:
@@ -604,7 +914,7 @@ def generate_html_report(all_results: list[dict], output_path: Path):
 </head>
 <body>
 <div class="page">
-  <h1 class="title">FlashInspector AI — Model v3 PoC</h1>
+  <h1 class="title">FlashInspector AI — Model v{DEFAULT_VERSION} PoC</h1>
   <p class="meta">{datetime.now().strftime('%B %d, %Y · %I:%M %p')}</p>
 
   <div class="summary">
@@ -636,7 +946,7 @@ def generate_html_report(all_results: list[dict], output_path: Path):
   </div>
 
   <div class="footer">
-    FlashInspector AI · Model v3 proof of concept
+    FlashInspector AI · Model v{DEFAULT_VERSION} proof of concept
   </div>
 </div>
 </body>
@@ -747,7 +1057,7 @@ def _det_css(cls_name: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="FlashInspector AI — Model v3 PoC Demo",
+        description=f"FlashInspector AI — Model v{DEFAULT_VERSION} PoC Demo",
     )
     parser.add_argument(
         "--videos", nargs="*",
@@ -764,6 +1074,34 @@ def main():
     parser.add_argument(
         "--max-images", type=int, default=20,
         help="Max dataset sample images to download (default: 20)",
+    )
+    parser.add_argument(
+        "--per-video-reports-dir",
+        type=str,
+        default=None,
+        help=(
+            "If set, write one HTML report per processed source under this directory "
+            "(relative to flashinspector-ai/poc_results/ unless absolute). "
+            "Names use the dominant detection class and count, e.g. "
+            "fire_extinguisher_tagged_as_noncompliant_13.html; "
+            "collisions get __<source_stem> suffix."
+        ),
+    )
+    parser.add_argument(
+        "--reset-report-history",
+        action="store_true",
+        help=(
+            f"Ignore previously saved poc_v{DEFAULT_VERSION}_results*.json and do not merge "
+            "poc_results/reports/*.html; generate combined report using only this run."
+        ),
+    )
+    parser.add_argument(
+        "--no-migrate-reports",
+        action="store_true",
+        help=(
+            "Do not merge poc_results/reports/*.html into full JSON (avoids stale HTML "
+            "overwriting API results when continuing a batch)."
+        ),
     )
     args = parser.parse_args()
 
@@ -837,8 +1175,8 @@ def main():
         logger.error("No sources were successfully processed.")
         sys.exit(1)
 
-    # Save combined JSON results
-    json_results = []
+    # Save combined JSON results from this run (compact machine-readable file)
+    json_results_current_run = []
     for r in all_results:
         jr = {k: v for k, v in r.items() if k not in ("annotated_b64", "frames")}
         if "frames" in r:
@@ -846,16 +1184,54 @@ def main():
                 {"timestamp_sec": f["timestamp_sec"], "detections": f["detections"]}
                 for f in r["frames"]
             ]
-        json_results.append(jr)
+        json_results_current_run.append(jr)
 
-    json_path = RESULTS_DIR / "poc_v3_results.json"
+    json_path = RESULTS_DIR / f"poc_v{DEFAULT_VERSION}_results.json"
+    previous_results: list[dict] = []
+    if not args.reset_report_history and json_path.exists():
+        try:
+            previous_results = json.loads(json_path.read_text())
+            if not isinstance(previous_results, list):
+                previous_results = []
+        except Exception:
+            logger.warning(f"Could not read previous {json_path.name}; starting fresh.")
+            previous_results = []
+
+    json_results = merge_results_for_history(previous_results, json_results_current_run)
     with open(json_path, "w") as f:
         json.dump(json_results, f, indent=2)
     logger.info(f"\nJSON results: {json_path}")
 
-    # Generate HTML report
+    # Keep full cumulative history for HTML (includes embedded frame previews)
+    full_json_path = RESULTS_DIR / f"poc_v{DEFAULT_VERSION}_results_full.json"
+    previous_full_results: list[dict] = []
+    if not args.reset_report_history and full_json_path.exists():
+        try:
+            previous_full_results = json.loads(full_json_path.read_text())
+            if not isinstance(previous_full_results, list):
+                previous_full_results = []
+        except Exception:
+            logger.warning(f"Could not read previous {full_json_path.name}; starting fresh.")
+            previous_full_results = []
+
+    full_results = merge_results_for_history(previous_full_results, all_results)
+    if not args.reset_report_history and not args.no_migrate_reports:
+        migrated_results = migrate_reports_dir_to_results(RESULTS_DIR / DEFAULT_REPORTS_SUBDIR)
+        full_results = merge_results_for_history(full_results, migrated_results)
+    with open(full_json_path, "w") as f:
+        json.dump(full_results, f, indent=2)
+    logger.info(f"Full JSON history: {full_json_path}")
+
+    # Generate HTML report from cumulative full history
     report_path = RESULTS_DIR / "poc_report.html"
-    generate_html_report(all_results, report_path)
+    generate_html_report(full_results, report_path)
+
+    per_video_paths: list[Path] = []
+    if args.per_video_reports_dir:
+        reports_sub = Path(args.per_video_reports_dir)
+        if not reports_sub.is_absolute():
+            reports_sub = RESULTS_DIR / reports_sub
+        per_video_paths = write_per_video_reports(all_results, reports_sub)
 
     # Print summary
     total_det = sum(r["total_detections"] for r in all_results)
@@ -866,13 +1242,15 @@ def main():
     )
 
     print("\n" + "=" * 60)
-    print("  FlashInspector AI — Model v3 PoC Summary")
+    print(f"  FlashInspector AI — Model v{DEFAULT_VERSION} PoC Summary")
     print("=" * 60)
     print(f"  Sources analyzed:         {len(all_results)}")
     print(f"  Total detections:         {total_det}")
     print(f"  Sources with detections:  {with_det}")
     print(f"  Sources with violations:  {with_viol}")
     print(f"\n  HTML Report:  {report_path}")
+    if per_video_paths:
+        print(f"  Per-video:    {len(per_video_paths)} file(s) in {reports_sub}/")
     print(f"  JSON Results: {json_path}")
     print(f"  Frames:       {FRAMES_DIR}/")
     print("=" * 60)
