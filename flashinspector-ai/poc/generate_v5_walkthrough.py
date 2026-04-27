@@ -19,6 +19,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import requests
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,12 +52,29 @@ VIOLATION_CLASSES = {
 }
 
 
+class RoboflowRESTModel:
+    """Lightweight wrapper around the Roboflow REST detect API (POST)."""
+
+    def __init__(self, api_key: str, project: str, version: int):
+        self.api_key = api_key
+        self.url = f"https://detect.roboflow.com/{project}/{version}"
+        print(f"Using Roboflow REST API: {self.url}")
+
+    def predict(self, image_path: str, confidence: int = 25) -> dict:
+        with open(image_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+        r = requests.post(
+            self.url,
+            params={"api_key": self.api_key, "confidence": confidence},
+            data=img_b64,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
 def get_model(api_key):
-    from roboflow import Roboflow
-    rf = Roboflow(api_key=api_key)
-    project = rf.workspace(WORKSPACE).project(PROJECT)
-    model = project.version(VERSION).model
-    print(f"Loaded model: {WORKSPACE}/{PROJECT} v{VERSION}")
+    model = RoboflowRESTModel(api_key, PROJECT, VERSION)
     return model
 
 
@@ -205,10 +223,10 @@ def main():
 
         frame = cv2.resize(frame, (out_w, out_h))
 
-        # Run inference
+        # Run inference via REST API
         cv2.imwrite(str(tmp_path), frame)
         try:
-            prediction = model.predict(str(tmp_path), confidence=CONFIDENCE).json()
+            prediction = model.predict(str(tmp_path), confidence=CONFIDENCE)
         except Exception as e:
             print(f"  Error on frame {i+1}: {e}")
             continue
