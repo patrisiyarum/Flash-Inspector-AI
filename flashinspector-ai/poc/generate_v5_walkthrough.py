@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-FlashInspector AI — Model v5 Video Walkthrough Generator
+FlashInspector AI — Video Walkthrough Generator
 
-Processes local inspection videos through the Roboflow Model v5 API,
-annotates detections with bounding boxes and violation banners, and
-produces a polished walkthrough video with title/end cards and HUD.
+Processes local inspection videos through either the self-hosted
+FlashInspector API or the Roboflow hosted API, annotates detections
+with bounding boxes and violation banners, and produces a polished
+walkthrough video with title/end cards and HUD.
 
-Output: poc_results/flashinspector_v5_walkthrough.mp4
+Output: poc_results/flashinspector_walkthrough.mp4
 
 Usage:
-    python generate_v5_walkthrough.py                    # all videos
-    python generate_v5_walkthrough.py --videos vid1.mp4  # specific video
-    python generate_v5_walkthrough.py --interval 2       # sample every 2s
+    python generate_v5_walkthrough.py                          # local API (default)
+    python generate_v5_walkthrough.py --api-url http://host:8001  # custom API URL
+    python generate_v5_walkthrough.py --roboflow               # use Roboflow instead
+    python generate_v5_walkthrough.py --videos vid1.mp4        # specific video
+    python generate_v5_walkthrough.py --interval 2             # sample every 2s
 """
 
 import argparse
@@ -32,12 +35,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 VIDEOS_DIR = BASE_DIR / "videos"
 RESULTS_DIR = BASE_DIR / "poc_results"
 
-PROJECT = "my-first-project-nqfzv"
-VERSION = 5
+LOCAL_API_URL = "http://localhost:8000"
+ROBOFLOW_PROJECT = "my-first-project-nqfzv"
+ROBOFLOW_VERSION = 5
 CONFIDENCE = 25
 OUTPUT_WIDTH = 720
 
 COLORS = {
+    # Roboflow model classes
     "missing fire extinguisher": (0, 0, 230),
     "fire extinguisher tagged as noncompliant": (0, 70, 230),
     "fire extinguisher": (0, 190, 0),
@@ -51,19 +56,78 @@ COLORS = {
     "FDC": (200, 130, 0),
     "fire system inspection tag": (0, 190, 190),
     "visible notification appliance": (200, 130, 0),
+    # Local model classes
+    "fire_extinguisher": (0, 190, 0),
+    "emergency_exit": (230, 160, 0),
+    "Back Exit": (230, 160, 0),
+    "Left Exit": (230, 160, 0),
+    "Right Exit": (230, 160, 0),
+    "Straight Exit": (230, 160, 0),
+    "Left-Right Exit": (230, 160, 0),
+    "manual_call_point": (200, 80, 0),
+    "fire_blanket": (0, 190, 0),
+    "smoke_detector": (200, 130, 0),
+    "flashing_light_orb": (200, 130, 0),
+    "empty_mount": (0, 0, 230),
+    "extinguisher_cabinet_empty": (0, 0, 230),
+    "non_compliant_tag": (0, 70, 230),
+    "yellow_tag": (0, 70, 230),
+    "red_tag": (0, 0, 230),
+    "white_tag": (0, 190, 0),
+    "exit_sign_dark": (0, 0, 230),
+    "blocked_exit": (0, 0, 230),
+    "smoke_detector_missing": (0, 0, 230),
+    "pull_station": (200, 80, 0),
+    "fire_alarm_panel": (200, 80, 0),
+    "notification_appliance": (200, 130, 0),
 }
 DEFAULT_COLOR = (200, 140, 0)
 
 VIOLATION_CLASSES = {
+    # Roboflow model
     "missing fire extinguisher",
     "fire extinguisher tagged as noncompliant",
+    # Local model
+    "empty_mount",
+    "extinguisher_cabinet_empty",
+    "non_compliant_tag",
+    "yellow_tag",
+    "red_tag",
+    "exit_sign_dark",
+    "blocked_exit",
+    "smoke_detector_missing",
 }
+
+
+class LocalAPIModel:
+    def __init__(self, api_url):
+        self.url = api_url.rstrip("/")
+        self.name = "Local API"
+        print(f"Using local FlashInspector API: {self.url}")
+        try:
+            r = requests.get(f"{self.url}/health", timeout=3)
+            r.raise_for_status()
+            print(f"  API is healthy")
+        except Exception as e:
+            print(f"  WARNING: API not reachable ({e})")
+            print(f"  Start it with: uvicorn api:app --host 0.0.0.0 --port 8000")
+
+    def predict(self, image_path, confidence=25):
+        with open(image_path, "rb") as f:
+            r = requests.post(
+                f"{self.url}/detect",
+                files={"file": (Path(image_path).name, f, "image/jpeg")},
+                params={"confidence": confidence},
+            )
+        r.raise_for_status()
+        return r.json()
 
 
 class RoboflowRESTModel:
     def __init__(self, api_key, project, version):
         self.api_key = api_key
         self.url = f"https://detect.roboflow.com/{project}/{version}"
+        self.name = "Roboflow"
         print(f"Using Roboflow REST API: {self.url}")
 
     def predict(self, image_path, confidence=25):
@@ -151,7 +215,7 @@ def make_hud(frame, video_name, timestamp, det_count, viol_count):
     frame = cv2.addWeighted(overlay, 0.85, frame, 0.15, 0)
 
     font_scale = 0.4 * (w / 640)
-    info = f"FlashInspector AI | Model v5 | {video_name} | {timestamp:.1f}s | Det: {det_count} | Viol: {viol_count}"
+    info = f"FlashInspector AI | {video_name} | {timestamp:.1f}s | Det: {det_count} | Viol: {viol_count}"
     cv2.putText(frame, info, (10, h - int(12 * (w / 640))),
                 cv2.FONT_HERSHEY_SIMPLEX, font_scale, (180, 180, 180), 1, cv2.LINE_AA)
     return frame
@@ -183,7 +247,7 @@ def process_videos(model, video_paths, interval_sec, output_path):
     # Title card
     for f in make_title_card(out_w, out_h, [
         ("FlashInspector AI", 1.2, 3),
-        ("Model v5 - Fire Safety Detection", 0.7, 2),
+        ("Fire Safety Detection", 0.7, 2),
         (f"Walkthrough Demo  |  {datetime.now().strftime('%B %Y')}", 0.5, 1),
     ], duration_frames=fps * 3):
         writer.write(f)
@@ -268,7 +332,7 @@ def process_videos(model, video_paths, interval_sec, output_path):
     for f in make_title_card(out_w, out_h, [
         ("Walkthrough Complete", 1.0, 2),
         (f"{total_frames} frames | {total_det} detections | {total_viol} violations", 0.55, 1),
-        ("FlashInspector AI  -  Model v5", 0.5, 1),
+        ("FlashInspector AI", 0.5, 1),
     ], duration_frames=fps * 3):
         writer.write(f)
 
@@ -289,9 +353,9 @@ def process_videos(model, video_paths, interval_sec, output_path):
             print(f"\n  Note: ffmpeg not found. Video saved as .avi instead.")
             print(f"  Install ffmpeg (`brew install ffmpeg`) to get .mp4 output.")
 
-    json_path = RESULTS_DIR / "v5_walkthrough_results.json"
+    json_path = RESULTS_DIR / "walkthrough_results.json"
     with open(json_path, "w") as f:
-        json.dump({"model_version": VERSION, "frames_processed": total_frames,
+        json.dump({"frames_processed": total_frames,
                     "total_detections": total_det, "total_violations": total_viol,
                     "videos": [v.name for v in video_paths],
                     "results": results_log}, f, indent=2)
@@ -304,18 +368,23 @@ def process_videos(model, video_paths, interval_sec, output_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FlashInspector AI — Model v5 Walkthrough")
+    parser = argparse.ArgumentParser(description="FlashInspector AI — Video Walkthrough")
     parser.add_argument("--videos", nargs="*", help="Specific video files to process")
     parser.add_argument("--interval", type=float, default=3.0, help="Seconds between sampled frames (default: 3)")
+    parser.add_argument("--api-url", type=str, default=LOCAL_API_URL, help="Local API URL (default: http://localhost:8000)")
+    parser.add_argument("--roboflow", action="store_true", help="Use Roboflow hosted API instead of local")
     args = parser.parse_args()
 
     load_dotenv(BASE_DIR / ".env")
-    api_key = os.environ.get("ROBOFLOW_API_KEY")
-    if not api_key:
-        print("Set ROBOFLOW_API_KEY in .env")
-        sys.exit(1)
 
-    model = RoboflowRESTModel(api_key, PROJECT, VERSION)
+    if args.roboflow:
+        api_key = os.environ.get("ROBOFLOW_API_KEY")
+        if not api_key:
+            print("Set ROBOFLOW_API_KEY in .env (required for --roboflow mode)")
+            sys.exit(1)
+        model = RoboflowRESTModel(api_key, ROBOFLOW_PROJECT, ROBOFLOW_VERSION)
+    else:
+        model = LocalAPIModel(args.api_url)
 
     if args.videos:
         video_paths = [Path(v) for v in args.videos if Path(v).exists()]
@@ -333,7 +402,7 @@ def main():
     print(f"Found {len(video_paths)} video(s) to process")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    output_path = RESULTS_DIR / "flashinspector_v5_walkthrough.mp4"
+    output_path = RESULTS_DIR / "flashinspector_walkthrough.mp4"
     process_videos(model, video_paths, args.interval, output_path)
 
 
