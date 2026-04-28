@@ -9,10 +9,7 @@ merged_equipment_dataset/
 merged_violation_dataset/
 annotation_frames/
 inference_results/
-poc_results/dataset_samples/
-poc_results/frames/
-poc_results/_tmp*
-poc_results/*.json
+poc_results/
 feedback_dataset/
 feedback_review/
 feedback_models/
