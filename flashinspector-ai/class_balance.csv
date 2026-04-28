@@ -1,0 +1,12 @@
+Class Name,Total Count,Training Count,Validation Count,Test Count
+missing fire extinguisher,36,36,0,0
+fire extinguisher tagged as noncompliant,29,29,0,0
+pull station,16,16,0,0
+exit,14,14,0,0
+fire alarm panel,10,10,0,0
+fire extinguisher tagged with a white label,7,7,0,0
+exit stair,2,2,0,0
+FDC,2,2,0,0
+fire extinguisher,1,1,0,0
+fire system inspection tag,1,1,0,0
+sounder,1,1,0,0
