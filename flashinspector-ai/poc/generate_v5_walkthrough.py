@@ -18,6 +18,7 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -171,8 +172,13 @@ def process_videos(model, video_paths, interval_sec, output_path):
     out_h = out_h if out_h % 2 == 0 else out_h + 1
 
     fps = 3
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (out_w, out_h))
+    avi_path = output_path.with_suffix(".avi")
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+    writer = cv2.VideoWriter(str(avi_path), fourcc, fps, (out_w, out_h))
+    if not writer.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        avi_path = output_path
+        writer = cv2.VideoWriter(str(output_path), fourcc, fps, (out_w, out_h))
 
     # Title card
     for f in make_title_card(out_w, out_h, [
@@ -268,6 +274,21 @@ def process_videos(model, video_paths, interval_sec, output_path):
 
     writer.release()
 
+    final_path = output_path
+    if avi_path != output_path and avi_path.exists():
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", str(avi_path),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", str(output_path),
+            ], check=True, capture_output=True)
+            avi_path.unlink(missing_ok=True)
+            final_path = output_path
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            final_path = avi_path
+            print(f"\n  Note: ffmpeg not found. Video saved as .avi instead.")
+            print(f"  Install ffmpeg (`brew install ffmpeg`) to get .mp4 output.")
+
     json_path = RESULTS_DIR / "v5_walkthrough_results.json"
     with open(json_path, "w") as f:
         json.dump({"model_version": VERSION, "frames_processed": total_frames,
@@ -276,7 +297,7 @@ def process_videos(model, video_paths, interval_sec, output_path):
                     "results": results_log}, f, indent=2)
 
     print(f"\n{'='*55}")
-    print(f"  Video saved: {output_path}")
+    print(f"  Video saved: {final_path}")
     print(f"  Frames: {total_frames} | Detections: {total_det} | Violations: {total_viol}")
     print(f"  JSON:   {json_path}")
     print(f"{'='*55}")
