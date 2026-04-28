@@ -265,6 +265,20 @@ def merge_datasets():
         else:
             detect_datasets[name] = info
 
+    # Auto-include converted COCO custom dataset if it exists
+    coco_custom_dir = DATASET_DIR / "coco_custom"
+    if coco_custom_dir.exists() and (coco_custom_dir / "data.yaml").exists():
+        with open(coco_custom_dir / "data.yaml") as f:
+            coco_cfg = yaml.safe_load(f)
+        coco_classes = coco_cfg.get("names", [])
+        if isinstance(coco_classes, dict):
+            coco_classes = [coco_classes[k] for k in sorted(coco_classes.keys())]
+        detect_datasets["coco_custom"] = {
+            "path": str(coco_custom_dir),
+            "classes": coco_classes,
+        }
+        logger.info(f"Including COCO custom dataset ({len(coco_classes)} classes)")
+
     # Merge detection datasets
     if detect_datasets:
         logger.info("Merging detection datasets -> merged_dataset")
