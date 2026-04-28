@@ -1,0 +1,15 @@
+services:
+  flashinspector-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - YOLO_VERBOSE=false
+    volumes:
+      - ./best_detect.pt:/app/best_detect.pt:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
