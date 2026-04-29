@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlashInspector AI — Fire Safety Inspection</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F525;</text></svg>">
+</head>
+<body>
+
+<!-- Hero Section -->
+<header class="hero">
+    <div class="hero-content">
+        <div class="hero-logo">
+            <svg class="logo-icon" viewBox="0 0 48 48" width="52" height="52" fill="none">
+                <path d="M24 4C24 4 14 16 14 28a10 10 0 0020 0C34 16 24 4 24 4z" fill="#e94560" opacity="0.9"/>
+                <path d="M24 14c0 0-5 7-5 15a5 5 0 0010 0c0-8-5-15-5-15z" fill="#ff7b54" opacity="0.8"/>
+            </svg>
+            <h1>FlashInspector <span class="highlight">AI</span></h1>
+        </div>
+        <p class="hero-tagline">AI-powered fire safety inspection. Upload images or video for instant compliance analysis.</p>
+        <div class="hero-badges">
+            <span class="badge badge-equip">Object Detection</span>
+            <span class="badge badge-violation">Violation Analysis</span>
+            <span class="badge badge-warn">NFPA Compliance</span>
+        </div>
+    </div>
+</header>
+
+<!-- API Config -->
+<section class="config-bar">
+    <div class="container">
+        <label for="apiUrl">API Endpoint:</label>
+        <input type="text" id="apiUrl" placeholder="https://your-api.onrender.com">
+        <button id="btnHealthCheck" class="btn btn-sm" title="Test connection">Test</button>
+        <span id="healthStatus" class="health-status"></span>
+    </div>
+</section>
+
+<!-- Tabs -->
+<nav class="tabs">
+    <div class="container">
+        <button class="tab active" data-tab="image">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            Image Inspection
+        </button>
+        <button class="tab" data-tab="video">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            Video Inspection
+        </button>
+    </div>
+</nav>
+
+<!-- Image Inspection Tab -->
+<section id="tab-image" class="tab-content active">
+    <div class="container">
+        <div class="upload-area" id="imageDropZone">
+            <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p>Drag & drop an image here</p>
+            <p class="upload-hint">or click to browse (JPG, PNG, WebP)</p>
+            <input type="file" id="imageInput" accept="image/*" hidden>
+        </div>
+
+        <div class="controls-row">
+            <label>
+                Confidence:
+                <input type="range" id="imageConfidence" min="1" max="100" value="25">
+                <span id="imageConfVal">25%</span>
+            </label>
+            <button id="btnDetectImage" class="btn btn-primary" disabled>Run Detection</button>
+        </div>
+
+        <!-- Image Results -->
+        <div id="imageResults" class="results-area hidden">
+            <div class="results-header">
+                <h2>Detection Results</h2>
+                <span id="imageInferenceTime" class="inference-time"></span>
+            </div>
+
+            <div class="canvas-wrapper">
+                <canvas id="detectionCanvas"></canvas>
+            </div>
+
+            <div class="results-grid">
+                <div class="result-card card-equipment">
+                    <h3>Equipment Detected</h3>
+                    <div id="equipmentList" class="detection-list"></div>
+                </div>
+                <div class="result-card card-violations">
+                    <h3>Violations Found</h3>
+                    <div id="violationList" class="detection-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="imageLoading" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p>Running AI detection...</p>
+        </div>
+    </div>
+</section>
+
+<!-- Video Inspection Tab -->
+<section id="tab-video" class="tab-content hidden">
+    <div class="container">
+        <div class="upload-area" id="videoDropZone">
+            <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polygon points="23 7 16 12 23 17 23 7"/>
+                <rect x="1" y="5" width="15" height="14" rx="2"/>
+            </svg>
+            <p>Drag & drop a video here</p>
+            <p class="upload-hint">or click to browse (MP4, AVI, MOV)</p>
+            <input type="file" id="videoInput" accept="video/*" hidden>
+        </div>
+
+        <div class="controls-row">
+            <label>
+                Confidence:
+                <input type="range" id="videoConfidence" min="1" max="100" value="25">
+                <span id="videoConfVal">25%</span>
+            </label>
+            <label>
+                Frame skip:
+                <input type="number" id="videoFrameSkip" min="1" max="60" value="5">
+            </label>
+            <button id="btnInspectVideo" class="btn btn-primary" disabled>Run Inspection</button>
+        </div>
+
+        <!-- Upload Progress -->
+        <div id="videoProgress" class="progress-container hidden">
+            <div class="progress-bar">
+                <div id="videoProgressFill" class="progress-fill"></div>
+            </div>
+            <span id="videoProgressText">Uploading...</span>
+        </div>
+
+        <!-- Video Results -->
+        <div id="videoResults" class="results-area hidden">
+            <div class="results-header">
+                <h2>Inspection Report</h2>
+                <span id="videoInferenceTime" class="inference-time"></span>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <div class="summary-value" id="vDuration">--</div>
+                    <div class="summary-label">Duration (sec)</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="vFrames">--</div>
+                    <div class="summary-label">Frames Processed</div>
+                </div>
+                <div class="summary-card summary-equip">
+                    <div class="summary-value" id="vEquipment">--</div>
+                    <div class="summary-label">Equipment Found</div>
+                </div>
+                <div class="summary-card summary-violation">
+                    <div class="summary-value" id="vViolations">--</div>
+                    <div class="summary-label">Violations</div>
+                </div>
+            </div>
+
+            <!-- Equipment Table -->
+            <div class="result-card card-equipment">
+                <h3>Tracked Equipment</h3>
+                <div class="table-wrapper">
+                    <table id="equipmentTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Class</th>
+                                <th>Confidence</th>
+                                <th>First Seen</th>
+                                <th>Last Seen</th>
+                                <th>Detections</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Violations Table -->
+            <div class="result-card card-violations">
+                <h3>Violations Detected</h3>
+                <div class="table-wrapper">
+                    <table id="violationTable">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                                <th>Confidence</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Detection Timeline -->
+            <div class="result-card">
+                <h3>Detection Timeline</h3>
+                <div id="timelineArea" class="timeline-area"></div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="videoLoading" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p>Processing video... This may take a while.</p>
+        </div>
+    </div>
+</section>
+
+<!-- How it Works -->
+<section class="how-it-works">
+    <div class="container">
+        <h2>How It Works</h2>
+        <div class="steps-grid">
+            <div class="step-card">
+                <div class="step-number">1</div>
+                <h3>Upload</h3>
+                <p>Upload an image or video of a building interior, hallway, or fire safety equipment area.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-number">2</div>
+                <h3>AI Detection</h3>
+                <p>Our YOLOv8 model detects fire extinguishers, exit signs, smoke detectors, pull stations, and more.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-number">3</div>
+                <h3>Violation Report</h3>
+                <p>Get instant analysis of NFPA compliance violations: missing equipment, blocked exits, non-compliant tags.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Demo Section -->
+<section class="demo-section">
+    <div class="container">
+        <h2>Sample Results</h2>
+        <p class="demo-subtitle">See what FlashInspector AI can detect:</p>
+
+        <div class="demo-grid">
+            <div class="demo-card card-equipment">
+                <h4>Equipment Classes</h4>
+                <ul class="demo-list">
+                    <li><span class="dot dot-green"></span> fire_extinguisher</li>
+                    <li><span class="dot dot-green"></span> emergency_exit</li>
+                    <li><span class="dot dot-green"></span> smoke_detector</li>
+                    <li><span class="dot dot-green"></span> pull_station</li>
+                    <li><span class="dot dot-green"></span> notification_appliance</li>
+                    <li><span class="dot dot-green"></span> emergency_light</li>
+                    <li><span class="dot dot-green"></span> fire_alarm_panel</li>
+                    <li><span class="dot dot-green"></span> fire_blanket</li>
+                </ul>
+            </div>
+            <div class="demo-card card-violations">
+                <h4>Violation Types</h4>
+                <ul class="demo-list">
+                    <li><span class="dot dot-red"></span> empty_mount <span class="severity-badge severity-critical">critical</span></li>
+                    <li><span class="dot dot-red"></span> non_compliant_tag <span class="severity-badge severity-critical">critical</span></li>
+                    <li><span class="dot dot-red"></span> exit_sign_dark <span class="severity-badge severity-critical">critical</span></li>
+                    <li><span class="dot dot-red"></span> smoke_detector_missing <span class="severity-badge severity-critical">critical</span></li>
+                    <li><span class="dot dot-red"></span> blocked_exit <span class="severity-badge severity-critical">critical</span></li>
+                    <li><span class="dot dot-yellow"></span> mounted_too_high <span class="severity-badge severity-warning">warning</span></li>
+                </ul>
+            </div>
+            <div class="demo-card">
+                <h4>Sample Detection Output</h4>
+                <pre class="demo-json">{
+  "predictions": [
+    {
+      "class": "fire_extinguisher",
+      "confidence": 0.92,
+      "bbox": {"x1": 120, "y1": 80, "x2": 195, "y2": 310}
+    },
+    {
+      "class": "empty_mount",
+      "confidence": 0.87,
+      "bbox": {"x1": 400, "y1": 100, "x2": 460, "y2": 250}
+    }
+  ],
+  "violations": [
+    {
+      "label": "EXTINGUISHER MISSING",
+      "severity": "critical"
+    }
+  ],
+  "inference_time_ms": 42.3
+}</pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+    <div class="container">
+        <p>Powered by <strong>FlashInspector AI</strong></p>
+        <p class="footer-sub">YOLOv8 object detection for fire safety compliance</p>
+    </div>
+</footer>
+
+<!-- Error Toast -->
+<div id="errorToast" class="toast hidden">
+    <span id="errorMessage"></span>
+    <button class="toast-close" onclick="document.getElementById('errorToast').classList.add('hidden')">&times;</button>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
