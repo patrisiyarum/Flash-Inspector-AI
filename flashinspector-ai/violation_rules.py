@@ -1,8 +1,6 @@
-"""
-FlashInspector AI - Violation Detection Rules
+"""FlashInspector AI - Violation Detection Rules
 
-Converts raw YOLO detections into fire inspection violations.
-Ported from the logic in test_model_video_colab.ipynb.
+Converts raw detections into fire inspection violations.
 """
 
 from __future__ import annotations
@@ -26,13 +24,25 @@ ALL_VIOLATION_CLASSES = (
 
 # Canonical names for class consolidation
 CLASS_MAP = {
+    # RF-DETR (DINOv2) model class names → canonical names
+    "fire extinguisher": "fire_extinguisher",
+    "fire extinguisher tagged as noncompliant": "non_compliant_tag",
+    "fire extinguisher tagged with a white label": "white_tag",
+    "missing fire extinguisher": "empty_mount",
+    "exit": "emergency_exit",
+    "exit stair": "emergency_exit",
+    "fire alarm panel": "fire_alarm_panel",
+    "fire system inspection tag": "fire_system_inspection_tag",
+    "pull station": "pull_station",
+    "sounder": "notification_appliance",
+    "FDC": "fdc",
+    # Legacy YOLO class name mappings
     "right exit": "emergency_exit", "left exit": "emergency_exit",
     "Right Exit": "emergency_exit", "Left Exit": "emergency_exit",
     "Straight Exit": "emergency_exit", "straight exit": "emergency_exit",
     "Left-Right Exit": "emergency_exit", "left-right exit": "emergency_exit",
     "emergency exit": "emergency_exit", "Emergency Exit": "emergency_exit",
     "fire-extinguisher": "fire_extinguisher",
-    "fire extinguisher": "fire_extinguisher",
     "Fire_Extinguisher": "fire_extinguisher",
     "Fire-Extinguisher": "fire_extinguisher",
     "yellow tag": "yellow_tag",

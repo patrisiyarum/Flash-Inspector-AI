@@ -2,8 +2,8 @@
 """
 FlashInspector AI — Self-Hosted Inference API
 
-FastAPI server that runs YOLOv8 fire safety detection locally.
-Replaces the Roboflow hosted API with your own model weights.
+FastAPI server that runs RF-DETR (DINOv2) fire safety detection locally.
+Uses the Roboflow-trained weights.pt model for inference.
 
 Endpoints:
     POST /detect          — Run detection on an uploaded image
@@ -14,7 +14,6 @@ Endpoints:
 """
 
 import base64
-import io
 import logging
 import tempfile
 import time
@@ -22,12 +21,13 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from ultralytics import YOLO
+from rfdetr import RFDETRBase
 
 from tracker import SimpleTracker
 from violation_rules import (
@@ -40,13 +40,14 @@ from violation_rules import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent / "best_detect.pt"
-model: YOLO | None = None
+MODEL_PATH = Path(__file__).parent / "weights.pt"
+model: RFDETRBase | None = None
+class_names: list[str] = []
 
 app = FastAPI(
     title="FlashInspector AI",
-    description="Self-hosted fire safety detection API powered by YOLOv8",
-    version="1.0.0",
+    description="Self-hosted fire safety detection API powered by RF-DETR (DINOv2)",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -69,34 +70,51 @@ async def root():
     return {"message": "FlashInspector AI API", "docs": "/docs"}
 
 
-def get_model() -> YOLO:
-    global model
+def get_model() -> RFDETRBase:
+    global model, class_names
     if model is None:
         if not MODEL_PATH.exists():
             raise RuntimeError(f"Model weights not found at {MODEL_PATH}")
-        logger.info(f"Loading model from {MODEL_PATH}")
-        model = YOLO(str(MODEL_PATH))
-        logger.info(f"Model loaded — classes: {list(model.names.values())}")
+        logger.info(f"Loading RF-DETR model from {MODEL_PATH}")
+        if not torch.cuda.is_available():
+            torch.cuda.is_available = lambda: False
+        m = RFDETRBase(
+            resolution=384,
+            num_classes=12,
+            pretrain_weights=str(MODEL_PATH),
+            patch_size=16,
+            positional_encoding_size=24,
+            num_windows=2,
+        )
+        if not torch.cuda.is_available():
+            m.model.device = torch.device("cpu")
+        class_names = m.class_names or []
+        model = m
+        logger.info(f"Model loaded — classes: {class_names}")
     return model
 
 
 def run_detection(img: np.ndarray, confidence: float) -> dict:
     m = get_model()
+    threshold = confidence / 100.0
     start = time.time()
-    results = m(img, conf=confidence * 0.01, verbose=False)[0]
+
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    result = m.predict(img_rgb, threshold=threshold)
     elapsed = time.time() - start
 
     h, w = img.shape[:2]
     predictions = []
-    for box in results.boxes:
-        raw_cls = results.names[int(box.cls)]
+    for i in range(len(result)):
+        cls_id = int(result.class_id[i])
+        raw_cls = class_names[cls_id] if cls_id < len(class_names) else f"class_{cls_id}"
         cls_name = consolidate_class(raw_cls)
-        conf = float(box.conf)
-        threshold = get_confidence_threshold(cls_name)
-        if conf < threshold and conf < confidence * 0.01:
+        conf = float(result.confidence[i])
+        conf_threshold = get_confidence_threshold(cls_name)
+        if conf < conf_threshold and conf < threshold:
             continue
 
-        x1, y1, x2, y2 = box.xyxy[0].tolist()
+        x1, y1, x2, y2 = result.xyxy[i].tolist()
         predictions.append({
             "class": cls_name,
             "confidence": round(conf, 4),
@@ -139,11 +157,12 @@ async def health():
 
 @app.get("/model/info")
 async def model_info():
-    m = get_model()
+    get_model()
     return {
         "model_path": str(MODEL_PATH),
-        "classes": list(m.names.values()),
-        "num_classes": len(m.names),
+        "model_type": "RF-DETR (DINOv2)",
+        "classes": class_names,
+        "num_classes": len(class_names),
     }
 
 
@@ -198,6 +217,7 @@ async def inspect_video(
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        threshold = confidence / 100.0
 
         tracker = SimpleTracker(iou_threshold=0.3, max_age=int(fps / frame_skip * 3))
         all_detections = []
@@ -212,14 +232,16 @@ async def inspect_video(
                 break
             if frame_idx % frame_skip == 0:
                 timestamp = round(frame_idx / fps, 2)
-                results = m(frame, conf=confidence * 0.01, verbose=False)[0]
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                result = m.predict(frame_rgb, threshold=threshold)
 
                 detections = []
-                for box in results.boxes:
-                    raw_cls = results.names[int(box.cls)]
+                for i in range(len(result)):
+                    cls_id = int(result.class_id[i])
+                    raw_cls = class_names[cls_id] if cls_id < len(class_names) else f"class_{cls_id}"
                     cls_name = consolidate_class(raw_cls)
-                    conf_val = float(box.conf)
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    conf_val = float(result.confidence[i])
+                    x1, y1, x2, y2 = result.xyxy[i].tolist()
                     detections.append({
                         "class": cls_name,
                         "confidence": round(conf_val, 3),
