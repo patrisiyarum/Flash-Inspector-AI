@@ -24,7 +24,8 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from ultralytics import YOLO
 
@@ -54,6 +55,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+@app.get("/")
+async def root():
+    index = Path(__file__).parent / "static" / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
+    return {"message": "FlashInspector AI API", "docs": "/docs"}
 
 
 def get_model() -> YOLO:
