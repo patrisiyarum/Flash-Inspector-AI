@@ -12,6 +12,7 @@ Endpoints:
 """
 
 import logging
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -21,7 +22,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from rfdetr import RFDETRBase
 
@@ -171,15 +172,15 @@ async def detect_image(
 
     annotated = draw_boxes(img, detections)
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-    cv2.imwrite(tmp.name, annotated, [cv2.IMWRITE_JPEG_QUALITY, 92])
-    tmp.close()
+    success, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if not success:
+        raise HTTPException(500, "Failed to encode result image")
 
-    return FileResponse(
-        tmp.name,
+    return Response(
+        content=buf.tobytes(),
         media_type="image/jpeg",
-        filename="flashinspector_result.jpg",
         headers={
+            "Content-Disposition": "inline; filename=flashinspector_result.jpg",
             "X-Detections": str(len(detections)),
             "X-Inference-Ms": str(round(elapsed * 1000, 1)),
         },
@@ -218,6 +219,7 @@ async def inspect_video(
         tmp_in.write(await file.read())
         input_path = tmp_in.name
 
+    raw_path = tempfile.NamedTemporaryFile(suffix=".avi", delete=False).name
     output_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
 
     try:
@@ -228,11 +230,10 @@ async def inspect_video(
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         threshold = confidence / 100.0
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        out = cv2.VideoWriter(raw_path, fourcc, fps, (width, height))
 
         frame_idx = 0
         last_detections = []
@@ -256,7 +257,16 @@ async def inspect_video(
         elapsed = time.time() - start
         logger.info(f"Video processed: {frame_idx} frames in {elapsed:.1f}s")
 
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", raw_path, "-c:v", "libx264", "-preset", "fast",
+             "-crf", "23", "-movflags", "+faststart", "-pix_fmt", "yuv420p", output_path],
+            capture_output=True, timeout=300,
+        )
+        Path(raw_path).unlink(missing_ok=True)
         Path(input_path).unlink(missing_ok=True)
+
+        if not Path(output_path).exists() or Path(output_path).stat().st_size == 0:
+            raise HTTPException(500, "Failed to encode output video")
 
         return FileResponse(
             output_path,
@@ -267,7 +277,10 @@ async def inspect_video(
                 "X-Inference-Sec": str(round(elapsed, 1)),
             },
         )
+    except HTTPException:
+        raise
     except Exception:
+        Path(raw_path).unlink(missing_ok=True)
         Path(input_path).unlink(missing_ok=True)
         Path(output_path).unlink(missing_ok=True)
         raise
