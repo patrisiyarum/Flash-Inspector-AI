@@ -4,6 +4,7 @@
     const $ = (s) => document.querySelector(s);
     const dropZone = $('#dropZone'), fileInput = $('#fileInput'), dropLabel = $('#dropLabel');
     const confSlider = $('#confidence'), confVal = $('#confVal'), btnRun = $('#btnRun');
+    const frameSkipSlider = $('#frameSkip'), frameSkipVal = $('#frameSkipVal'), frameSkipLabel = $('#frameSkipLabel');
     const loading = $('#loading'), loadingText = $('#loadingText');
     const progress = $('#progress'), progressFill = $('#progressFill'), progressText = $('#progressText');
     const resultArea = $('#resultArea'), imageResult = $('#imageResult'), videoResult = $('#videoResult');
@@ -22,6 +23,7 @@
     function isVideo(file) { return file.type.startsWith('video/'); }
 
     confSlider.addEventListener('input', () => { confVal.textContent = confSlider.value + '%'; });
+    frameSkipSlider.addEventListener('input', () => { frameSkipVal.textContent = frameSkipSlider.value; });
 
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -36,6 +38,8 @@
         dropLabel.textContent = file.name;
         btnRun.disabled = false;
         resultArea.classList.add('hidden');
+        if (isVideo(file)) frameSkipLabel.classList.remove('hidden');
+        else frameSkipLabel.classList.add('hidden');
     }
 
     btnRun.addEventListener('click', () => {
@@ -78,7 +82,7 @@
 
         const formData = new FormData();
         formData.append('file', selectedFile);
-        const url = '/inspect/video?confidence=' + confSlider.value + '&frame_skip=3';
+        const url = '/inspect/video?confidence=' + confSlider.value + '&frame_skip=' + frameSkipSlider.value;
 
         const xhr = new XMLHttpRequest();
         xhr.responseType = 'blob';
