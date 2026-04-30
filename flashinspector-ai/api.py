@@ -2,18 +2,15 @@
 """
 FlashInspector AI — Self-Hosted Inference API
 
-FastAPI server that runs RF-DETR (DINOv2) fire safety detection locally.
-Uses the Roboflow-trained weights.pt model for inference.
+FastAPI server that runs RF-DETR (DINOv2) fire safety detection.
 
 Endpoints:
-    POST /detect          — Run detection on an uploaded image
-    POST /detect/base64   — Run detection on a base64-encoded image
-    POST /inspect/video   — Run full inspection pipeline on a video
+    POST /detect          — Returns annotated image with bounding boxes
+    POST /inspect/video   — Returns annotated video with bounding boxes
     GET  /health          — Health check
     GET  /model/info      — Model metadata and class list
 """
 
-import base64
 import logging
 import tempfile
 import time
@@ -26,13 +23,10 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
 from rfdetr import RFDETRBase
 
-from tracker import SimpleTracker
 from violation_rules import (
     ALL_VIOLATION_CLASSES,
-    check_violations,
     consolidate_class,
     get_confidence_threshold,
 )
@@ -43,6 +37,9 @@ logger = logging.getLogger(__name__)
 MODEL_PATH = Path(__file__).parent / "weights.pt"
 model: RFDETRBase | None = None
 class_names: list[str] = []
+
+EQUIPMENT_COLOR = (74, 222, 128)
+VIOLATION_COLOR = (68, 68, 239)
 
 app = FastAPI(
     title="FlashInspector AI",
@@ -94,72 +91,62 @@ def get_model() -> RFDETRBase:
     return model
 
 
-def run_detection(img: np.ndarray, confidence: float) -> dict:
+def run_inference(img_rgb: np.ndarray, threshold: float) -> list[dict]:
     m = get_model()
-    threshold = confidence / 100.0
-    start = time.time()
-
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     result = m.predict(img_rgb, threshold=threshold)
-    elapsed = time.time() - start
-
-    h, w = img.shape[:2]
-    predictions = []
+    detections = []
     for i in range(len(result)):
         cls_id = int(result.class_id[i])
         raw_cls = class_names[cls_id] if cls_id < len(class_names) else f"class_{cls_id}"
         cls_name = consolidate_class(raw_cls)
         conf = float(result.confidence[i])
-        conf_threshold = get_confidence_threshold(cls_name)
-        if conf < conf_threshold and conf < threshold:
+        if conf < get_confidence_threshold(cls_name) and conf < threshold:
             continue
-
         x1, y1, x2, y2 = result.xyxy[i].tolist()
-        predictions.append({
+        detections.append({
             "class": cls_name,
-            "confidence": round(conf, 4),
-            "x": round((x1 + x2) / 2, 1),
-            "y": round((y1 + y2) / 2, 1),
-            "width": round(x2 - x1, 1),
-            "height": round(y2 - y1, 1),
-            "bbox": {"x1": round(x1, 1), "y1": round(y1, 1),
-                     "x2": round(x2, 1), "y2": round(y2, 1)},
+            "confidence": round(conf, 3),
+            "bbox": [int(x1), int(y1), int(x2), int(y2)],
         })
-
-    violations = check_violations(
-        [{"class": p["class"], "confidence": p["confidence"],
-          "bbox": [p["bbox"]["x1"], p["bbox"]["y1"], p["bbox"]["x2"], p["bbox"]["y2"]]}
-         for p in predictions],
-        h, timestamp=0.0,
-    )
-
-    return {
-        "predictions": predictions,
-        "violations": violations,
-        "image": {"width": w, "height": h},
-        "inference_time_ms": round(elapsed * 1000, 1),
-    }
+    return detections
 
 
-@app.on_event("startup")
-async def startup():
-    try:
-        get_model()
-    except RuntimeError as e:
-        logger.error(str(e))
+def draw_boxes(frame: np.ndarray, detections: list[dict]) -> np.ndarray:
+    annotated = frame.copy()
+    h, w = annotated.shape[:2]
+    font_scale = max(0.5, min(w, h) / 1000)
+    thickness = max(1, int(min(w, h) / 400))
+
+    for det in detections:
+        x1, y1, x2, y2 = det["bbox"]
+        is_violation = det["class"] in ALL_VIOLATION_CLASSES
+        color = VIOLATION_COLOR if is_violation else EQUIPMENT_COLOR
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, thickness + 1)
+
+        label = f"{det['class']} {det['confidence']:.0%}"
+        (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        ly = max(y1 - 6, th + 6)
+        cv2.rectangle(annotated, (x1, ly - th - 6), (x1 + tw + 8, ly + baseline), color, -1)
+        cv2.putText(annotated, label, (x1 + 4, ly - 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+
+    return annotated
 
 
 @app.get("/health")
 async def health():
-    m = get_model()
-    return {"status": "ok", "model_loaded": m is not None}
+    try:
+        get_model()
+        return {"status": "ok", "model_loaded": True}
+    except RuntimeError:
+        return {"status": "ok", "model_loaded": False}
 
 
 @app.get("/model/info")
 async def model_info():
     get_model()
     return {
-        "model_path": str(MODEL_PATH),
         "model_type": "RF-DETR (DINOv2)",
         "classes": class_names,
         "num_classes": len(class_names),
@@ -167,115 +154,120 @@ async def model_info():
 
 
 @app.post("/detect")
-async def detect_upload(
+async def detect_image(
     file: UploadFile = File(...),
-    confidence: float = Query(25, ge=1, le=100, description="Confidence threshold (1-100)"),
+    confidence: float = Query(25, ge=1, le=100),
 ):
     contents = await file.read()
     img_array = np.frombuffer(contents, np.uint8)
     img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(400, "Could not decode image")
-    return JSONResponse(run_detection(img, confidence))
+
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    start = time.time()
+    detections = run_inference(img_rgb, confidence / 100.0)
+    elapsed = time.time() - start
+
+    annotated = draw_boxes(img, detections)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    cv2.imwrite(tmp.name, annotated, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    tmp.close()
+
+    return FileResponse(
+        tmp.name,
+        media_type="image/jpeg",
+        filename="flashinspector_result.jpg",
+        headers={
+            "X-Detections": str(len(detections)),
+            "X-Inference-Ms": str(round(elapsed * 1000, 1)),
+        },
+    )
 
 
-@app.post("/detect/base64")
-async def detect_base64(
-    body: dict,
-    confidence: float = Query(25, ge=1, le=100, description="Confidence threshold (1-100)"),
+@app.post("/detect/json")
+async def detect_json(
+    file: UploadFile = File(...),
+    confidence: float = Query(25, ge=1, le=100),
 ):
-    image_b64 = body.get("image")
-    if not image_b64:
-        raise HTTPException(400, "Missing 'image' field with base64-encoded image")
-    try:
-        img_bytes = base64.b64decode(image_b64)
-        img_array = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    except Exception:
-        raise HTTPException(400, "Could not decode base64 image")
+    contents = await file.read()
+    img_array = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
     if img is None:
-        raise HTTPException(400, "Could not decode image data")
-    return JSONResponse(run_detection(img, confidence))
+        raise HTTPException(400, "Could not decode image")
+
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    start = time.time()
+    detections = run_inference(img_rgb, confidence / 100.0)
+    elapsed = time.time() - start
+
+    return JSONResponse({
+        "detections": detections,
+        "inference_time_ms": round(elapsed * 1000, 1),
+    })
 
 
 @app.post("/inspect/video")
 async def inspect_video(
     file: UploadFile = File(...),
     confidence: float = Query(25, ge=1, le=100),
-    frame_skip: int = Query(5, ge=1, le=60, description="Process every Nth frame"),
+    frame_skip: int = Query(3, ge=1, le=30),
 ):
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_in:
+        tmp_in.write(await file.read())
+        input_path = tmp_in.name
+
+    output_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
 
     try:
-        m = get_model()
-        cap = cv2.VideoCapture(tmp_path)
+        cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             raise HTTPException(400, "Could not open video file")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         threshold = confidence / 100.0
 
-        tracker = SimpleTracker(iou_threshold=0.3, max_age=int(fps / frame_skip * 3))
-        all_detections = []
-        all_violations = []
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
         frame_idx = 0
-        processed = 0
+        last_detections = []
         start = time.time()
 
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+
             if frame_idx % frame_skip == 0:
-                timestamp = round(frame_idx / fps, 2)
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = m.predict(frame_rgb, threshold=threshold)
+                last_detections = run_inference(frame_rgb, threshold)
 
-                detections = []
-                for i in range(len(result)):
-                    cls_id = int(result.class_id[i])
-                    raw_cls = class_names[cls_id] if cls_id < len(class_names) else f"class_{cls_id}"
-                    cls_name = consolidate_class(raw_cls)
-                    conf_val = float(result.confidence[i])
-                    x1, y1, x2, y2 = result.xyxy[i].tolist()
-                    detections.append({
-                        "class": cls_name,
-                        "confidence": round(conf_val, 3),
-                        "bbox": [x1, y1, x2, y2],
-                    })
-
-                violations = check_violations(detections, height, timestamp)
-                tracker.update(detections, timestamp)
-
-                if detections:
-                    all_detections.append({
-                        "timestamp": timestamp,
-                        "detections": detections,
-                    })
-                all_violations.extend(violations)
-                processed += 1
+            annotated = draw_boxes(frame, last_detections)
+            out.write(annotated)
             frame_idx += 1
 
         cap.release()
+        out.release()
         elapsed = time.time() - start
+        logger.info(f"Video processed: {frame_idx} frames in {elapsed:.1f}s")
 
-        tracks = tracker.get_all_tracks()
-        equipment = [t for t in tracks if t.class_name not in ALL_VIOLATION_CLASSES]
+        Path(input_path).unlink(missing_ok=True)
 
-        return JSONResponse({
-            "duration_sec": round(total_frames / fps, 1),
-            "frames_processed": processed,
-            "inference_time_sec": round(elapsed, 1),
-            "unique_objects": len(tracks),
-            "equipment_count": len(equipment),
-            "total_violations": len(all_violations),
-            "tracks": [t.to_dict() for t in tracks],
-            "frame_detections": all_detections,
-            "violations": all_violations,
-        })
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
+        return FileResponse(
+            output_path,
+            media_type="video/mp4",
+            filename="flashinspector_result.mp4",
+            headers={
+                "X-Frames": str(frame_idx),
+                "X-Inference-Sec": str(round(elapsed, 1)),
+            },
+        )
+    except Exception:
+        Path(input_path).unlink(missing_ok=True)
+        Path(output_path).unlink(missing_ok=True)
+        raise
