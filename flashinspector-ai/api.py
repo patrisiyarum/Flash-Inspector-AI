@@ -60,6 +60,15 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
+@app.on_event("startup")
+def preload_model():
+    try:
+        get_model()
+        logger.info("Model preloaded at startup")
+    except Exception as e:
+        logger.warning(f"Could not preload model: {e}")
+
+
 @app.get("/")
 async def root():
     index = Path(__file__).parent / "static" / "index.html"

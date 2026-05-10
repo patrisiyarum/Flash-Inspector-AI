@@ -48,37 +48,57 @@
         else runVideoInspection();
     });
 
-    async function runImageDetection() {
+    function runImageDetection() {
         resultArea.classList.add('hidden');
         loading.classList.remove('hidden');
-        loadingText.textContent = 'Running detection...';
+        loadingText.textContent = 'Analyzing image... (may take 30-60s on first run)';
+        btnRun.disabled = true;
 
         const formData = new FormData();
         formData.append('file', selectedFile);
 
-        try {
-            const res = await fetch('/detect?confidence=' + confSlider.value, { method: 'POST', body: formData });
-            if (!res.ok) throw new Error('Server returned ' + res.status);
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
+        const xhr = new XMLHttpRequest();
+        xhr.responseType = 'blob';
 
-            resultImg.src = url;
-            downloadLink.href = url;
-            downloadLink.download = 'flashinspector_result.jpg';
-            imageResult.classList.remove('hidden');
-            videoResult.classList.add('hidden');
-            resultArea.classList.remove('hidden');
-        } catch (e) {
-            showError('Detection failed: ' + e.message);
-        } finally {
+        xhr.addEventListener('load', () => {
             loading.classList.add('hidden');
-        }
+            btnRun.disabled = false;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                const blob = xhr.response;
+                const url = URL.createObjectURL(blob);
+                resultImg.src = url;
+                downloadLink.href = url;
+                downloadLink.download = 'flashinspector_result.jpg';
+                imageResult.classList.remove('hidden');
+                videoResult.classList.add('hidden');
+                resultArea.classList.remove('hidden');
+            } else {
+                showError('Detection failed: HTTP ' + xhr.status);
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            loading.classList.add('hidden');
+            btnRun.disabled = false;
+            showError('Network error. The server may still be starting up — try again in a minute.');
+        });
+
+        xhr.addEventListener('timeout', () => {
+            loading.classList.add('hidden');
+            btnRun.disabled = false;
+            showError('Request timed out. The server may need more time to load the model — try again.');
+        });
+
+        xhr.open('POST', '/detect?confidence=' + confSlider.value);
+        xhr.timeout = 120000;
+        xhr.send(formData);
     }
 
     function runVideoInspection() {
         resultArea.classList.add('hidden');
         progress.classList.remove('hidden');
         loading.classList.add('hidden');
+        btnRun.disabled = true;
 
         const formData = new FormData();
         formData.append('file', selectedFile);
@@ -105,6 +125,7 @@
         xhr.addEventListener('load', () => {
             loading.classList.add('hidden');
             progress.classList.add('hidden');
+            btnRun.disabled = false;
             if (xhr.status >= 200 && xhr.status < 300) {
                 const blob = xhr.response;
                 const blobUrl = URL.createObjectURL(blob);
@@ -122,13 +143,15 @@
         xhr.addEventListener('error', () => {
             loading.classList.add('hidden');
             progress.classList.add('hidden');
-            showError('Network error.');
+            btnRun.disabled = false;
+            showError('Network error. The server may still be starting up — try again in a minute.');
         });
 
         xhr.addEventListener('timeout', () => {
             loading.classList.add('hidden');
             progress.classList.add('hidden');
-            showError('Request timed out. Try a shorter video.');
+            btnRun.disabled = false;
+            showError('Request timed out. Try a shorter video or increase frame skip.');
         });
 
         xhr.open('POST', url);
